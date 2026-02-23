@@ -1,0 +1,407 @@
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use serde::Serialize;
+use wasm_bindgen::prelude::*;
+
+use crate::components::settings::{PasswordType, Theme, UserSettings};
+
+/// Apply theme by setting data-theme attribute on <html>.
+fn apply_theme(theme: &Theme) {
+    let theme_str = match theme {
+        Theme::Dark => "dark",
+        Theme::Light => "light",
+    };
+    if let Some(window) = web_sys::window() {
+        if let Some(doc) = window.document() {
+            if let Some(el) = doc.document_element() {
+                let _ = el.set_attribute("data-theme", theme_str);
+            }
+        }
+    }
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+}
+
+#[component]
+pub fn SettingsGeneral(
+    settings: ReadSignal<UserSettings>,
+    set_settings: WriteSignal<UserSettings>,
+    on_save: impl Fn() + Clone + Send + 'static,
+) -> impl IntoView {
+    let save = on_save.clone();
+    let (preview_password, set_preview_password) = signal(String::new());
+    let (gen_loading, set_gen_loading) = signal(false);
+    // Recovery kit state
+    let (recovery_password, set_recovery_password) = signal(String::new());
+    let (recovery_loading, set_recovery_loading) = signal(false);
+    let (recovery_msg, set_recovery_msg) = signal(String::new());
+    let (recovery_error, set_recovery_error) = signal(String::new());
+
+    let generate_preview = move |_| {
+        set_gen_loading.set(true);
+        let s = settings.get_untracked();
+        spawn_local(async move {
+            #[derive(Serialize)]
+            struct GenArgs {
+                length: u32,
+                #[serde(rename = "passwordType")]
+                password_type: String,
+            }
+            let ptype = match s.password_type {
+                PasswordType::Alphanumeric => "alphanumeric",
+                PasswordType::Passphrase => "passphrase",
+            };
+            let args = serde_wasm_bindgen::to_value(&GenArgs {
+                length: s.password_default_length,
+                password_type: ptype.to_string(),
+            })
+            .unwrap();
+            if let Ok(result) = invoke("generate_password", args).await {
+                if let Some(pwd) = result.as_string() {
+                    set_preview_password.set(pwd);
+                }
+            }
+            set_gen_loading.set(false);
+        });
+    };
+
+    view! {
+        <div class="settings-section">
+            <h2 class="settings-section-title">"⚙️ Général & UX"</h2>
+            <p class="settings-section-desc">"Personnalisez votre expérience SaladVault."</p>
+
+            // Password generator defaults
+            <div class="settings-group">
+                <h3>"Générateur de mots de passe"</h3>
+                <div class="settings-row">
+                    <label>"Longueur par défaut"</label>
+                    <div class="slider-container">
+                        <input
+                            type="range"
+                            min="12"
+                            max="64"
+                            class="settings-slider"
+                            prop:value=move || settings.get().password_default_length.to_string()
+                            on:input={
+                                let save = save.clone();
+                                move |ev| {
+                                    let val: u32 = event_target_value(&ev).parse().unwrap_or(20);
+                                    let mut s = settings.get_untracked();
+                                    s.password_default_length = val;
+                                    set_settings.set(s);
+                                    save();
+                                }
+                            }
+                        />
+                        <span class="slider-value">{move || settings.get().password_default_length.to_string()}</span>
+                    </div>
+                </div>
+
+                <div class="settings-row">
+                    <label>"Type de mot de passe"</label>
+                    <div class="settings-radio-group-inline">
+                        <label class="settings-radio">
+                            <input
+                                type="radio"
+                                name="password-type"
+                                checked=move || settings.get().password_type == PasswordType::Alphanumeric
+                                on:change={
+                                    let save = save.clone();
+                                    move |_| {
+                                        let mut s = settings.get_untracked();
+                                        s.password_type = PasswordType::Alphanumeric;
+                                        set_settings.set(s);
+                                        save();
+                                    }
+                                }
+                            />
+                            <span>"Alphanumérique"</span>
+                        </label>
+                        <label class="settings-radio">
+                            <input
+                                type="radio"
+                                name="password-type"
+                                checked=move || settings.get().password_type == PasswordType::Passphrase
+                                on:change={
+                                    let save = save.clone();
+                                    move |_| {
+                                        let mut s = settings.get_untracked();
+                                        s.password_type = PasswordType::Passphrase;
+                                        set_settings.set(s);
+                                        save();
+                                    }
+                                }
+                            />
+                            <span>"Passphrase"</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-row">
+                    <button class="btn btn-ghost btn-sm" on:click=generate_preview disabled=move || gen_loading.get()>
+                        {move || if gen_loading.get() { "Génération..." } else { "🎲 Générer un aperçu" }}
+                    </button>
+                    {move || {
+                        let pwd = preview_password.get();
+                        if pwd.is_empty() {
+                            view! { <div></div> }.into_any()
+                        } else {
+                            view! {
+                                <code class="password-preview">{pwd}</code>
+                            }.into_any()
+                        }
+                    }}
+                </div>
+            </div>
+
+            // Theme
+            <div class="settings-group">
+                <h3>"Thème"</h3>
+                <div class="settings-radio-group-inline">
+                    <label class="settings-radio">
+                        <input
+                            type="radio"
+                            name="theme"
+                            checked=move || settings.get().theme == Theme::Dark
+                            on:change={
+                                let save = save.clone();
+                                move |_| {
+                                    let mut s = settings.get_untracked();
+                                    s.theme = Theme::Dark;
+                                    apply_theme(&s.theme);
+                                    set_settings.set(s);
+                                    save();
+                                }
+                            }
+                        />
+                        <span>"🌙 Sombre"</span>
+                    </label>
+                    <label class="settings-radio">
+                        <input
+                            type="radio"
+                            name="theme"
+                            checked=move || settings.get().theme == Theme::Light
+                            on:change={
+                                let save = save.clone();
+                                move |_| {
+                                    let mut s = settings.get_untracked();
+                                    s.theme = Theme::Light;
+                                    apply_theme(&s.theme);
+                                    set_settings.set(s);
+                                    save();
+                                }
+                            }
+                        />
+                        <span>"☀️ Clair"</span>
+                    </label>
+                </div>
+            </div>
+
+            // Dead Man's Switch
+            <div class="settings-group dead-man-switch">
+                <h3>"💀 Dead Man's Switch"</h3>
+                <p class="settings-hint">"Si vous ne vous connectez pas pendant un certain temps, envoyez automatiquement le Kit de Secours à un contact de confiance."</p>
+
+                <div class="settings-row">
+                    <label>"Activer le Dead Man's Switch"</label>
+                    <input
+                        type="checkbox"
+                        class="settings-toggle"
+                        prop:checked=move || settings.get().dead_man_switch_enabled
+                        on:change={
+                            let save = save.clone();
+                            move |ev| {
+                                let checked = event_target_checked(&ev);
+                                let mut s = settings.get_untracked();
+                                s.dead_man_switch_enabled = checked;
+                                set_settings.set(s.clone());
+                                save();
+                                sync_deadman_to_server(&s);
+                            }
+                        }
+                    />
+                </div>
+                {move || {
+                    if !settings.get().dead_man_switch_enabled {
+                        view! {
+                            <p class="settings-hint settings-hint-warn">"Désactivé — en cas d'incapacité prolongée, personne ne pourra accéder à vos données."</p>
+                        }.into_any()
+                    } else {
+                        view! { <div></div> }.into_any()
+                    }
+                }}
+
+                {move || {
+                    if settings.get().dead_man_switch_enabled {
+                        let save_days = save.clone();
+                        let save_email = save.clone();
+                        view! {
+                            <div class="dead-man-details">
+                                <div class="settings-row">
+                                    <label>"Délai d'inactivité (jours)"</label>
+                                    <input
+                                        type="number"
+                                        class="settings-input-sm"
+                                        min="7"
+                                        max="365"
+                                        prop:value=move || settings.get().dead_man_switch_days.to_string()
+                                        on:change=move |ev| {
+                                            let val: u32 = event_target_value(&ev).parse().unwrap_or(90);
+                                            let mut s = settings.get_untracked();
+                                            s.dead_man_switch_days = val.max(7).min(365);
+                                            set_settings.set(s.clone());
+                                            save_days();
+                                            sync_deadman_to_server(&s);
+                                        }
+                                    />
+                                </div>
+                                <div class="settings-row">
+                                    <label>"Email du contact de confiance"</label>
+                                    <input
+                                        type="email"
+                                        class="settings-input"
+                                        placeholder="contact@example.com"
+                                        prop:value=move || settings.get().dead_man_switch_email.clone()
+                                        on:change=move |ev| {
+                                            let val = event_target_value(&ev);
+                                            let mut s = settings.get_untracked();
+                                            s.dead_man_switch_email = val;
+                                            set_settings.set(s.clone());
+                                            save_email();
+                                            sync_deadman_to_server(&s);
+                                        }
+                                    />
+                                </div>
+                                // Recovery Kit section
+                                <div class="settings-subgroup">
+                                    <h4>"📦 Kit de Secours"</h4>
+                                    <p class="settings-hint">"Générez un kit chiffré contenant toutes vos données. Il sera envoyé à votre contact de confiance si le Dead Man's Switch se déclenche."</p>
+                                    <div class="settings-row">
+                                        <label>"Mot de passe du kit"</label>
+                                        <input
+                                            type="password"
+                                            class="settings-input"
+                                            placeholder="Min. 8 caractères"
+                                            prop:value=move || recovery_password.get()
+                                            on:input=move |ev| set_recovery_password.set(event_target_value(&ev))
+                                        />
+                                    </div>
+                                    <p class="settings-hint">"Communiquez ce mot de passe à votre contact par un canal séparé (en personne, courrier scellé, etc.)."</p>
+                                    <button
+                                        class="btn btn-primary btn-sm"
+                                        disabled=move || recovery_loading.get() || recovery_password.get().len() < 8
+                                        on:click={
+                                            move |_| {
+                                                set_recovery_loading.set(true);
+                                                set_recovery_msg.set(String::new());
+                                                set_recovery_error.set(String::new());
+                                                let pwd = recovery_password.get_untracked();
+                                                let s = settings.get_untracked();
+                                                spawn_local(async move {
+                                                    // 1. Generate the recovery blob
+                                                    #[derive(Serialize)]
+                                                    struct RecoveryArgs {
+                                                        #[serde(rename = "recoveryPassword")]
+                                                        recovery_password: String,
+                                                    }
+                                                    let gen_args = serde_wasm_bindgen::to_value(&RecoveryArgs {
+                                                        recovery_password: pwd,
+                                                    }).unwrap();
+                                                    match invoke("generate_recovery_kit", gen_args).await {
+                                                        Ok(blob_js) => {
+                                                            let blob = blob_js.as_string().unwrap_or_default();
+                                                            // 2. Upload to server via deadman_update_config
+                                                            #[derive(Serialize)]
+                                                            struct DeadmanArgs {
+                                                                enabled: bool,
+                                                                days: u32,
+                                                                #[serde(rename = "recipientEmail")]
+                                                                recipient_email: String,
+                                                                #[serde(rename = "recoveryBlob")]
+                                                                recovery_blob: Option<String>,
+                                                            }
+                                                            let upload_args = serde_wasm_bindgen::to_value(&DeadmanArgs {
+                                                                enabled: s.dead_man_switch_enabled,
+                                                                days: s.dead_man_switch_days,
+                                                                recipient_email: s.dead_man_switch_email.clone(),
+                                                                recovery_blob: Some(blob),
+                                                            }).unwrap();
+                                                            match invoke("deadman_update_config", upload_args).await {
+                                                                Ok(_) => {
+                                                                    set_recovery_msg.set("Kit de secours généré et envoyé au serveur".to_string());
+                                                                }
+                                                                Err(e) => {
+                                                                    set_recovery_error.set(
+                                                                        e.as_string().unwrap_or_else(|| "Erreur lors de l'envoi au serveur".to_string())
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            set_recovery_error.set(
+                                                                e.as_string().unwrap_or_else(|| "Erreur lors de la génération".to_string())
+                                                            );
+                                                        }
+                                                    }
+                                                    set_recovery_loading.set(false);
+                                                });
+                                            }
+                                        }
+                                    >
+                                        {move || if recovery_loading.get() { "Génération..." } else { "🔐 Générer et envoyer le kit" }}
+                                    </button>
+                                    {move || {
+                                        let msg = recovery_msg.get();
+                                        let err = recovery_error.get();
+                                        if !msg.is_empty() {
+                                            view! { <p class="info-msg">{msg}</p> }.into_any()
+                                        } else if !err.is_empty() {
+                                            view! { <p class="error-msg">{err}</p> }.into_any()
+                                        } else {
+                                            view! { <div></div> }.into_any()
+                                        }
+                                    }}
+                                </div>
+
+                                <div class="settings-note">
+                                    <span class="note-icon">"ℹ️"</span>
+                                    <p>"Les paramètres sont sauvegardés localement et synchronisés avec le serveur si vous êtes connecté (onglet Sync)."</p>
+                                </div>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <div></div> }.into_any()
+                    }
+                }}
+            </div>
+        </div>
+    }
+}
+
+/// Sync Dead Man's Switch settings to the server (fire-and-forget).
+/// Silently ignored if not connected to the server.
+fn sync_deadman_to_server(settings: &UserSettings) {
+    #[derive(Serialize)]
+    struct DeadmanArgs {
+        enabled: bool,
+        days: u32,
+        #[serde(rename = "recipientEmail")]
+        recipient_email: String,
+        #[serde(rename = "recoveryBlob")]
+        recovery_blob: Option<String>,
+    }
+    let args = serde_wasm_bindgen::to_value(&DeadmanArgs {
+        enabled: settings.dead_man_switch_enabled,
+        days: settings.dead_man_switch_days,
+        recipient_email: settings.dead_man_switch_email.clone(),
+        recovery_blob: None,
+    })
+    .unwrap();
+    spawn_local(async move {
+        let _ = invoke("deadman_update_config", args).await;
+    });
+}

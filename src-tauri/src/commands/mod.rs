@@ -1,0 +1,9 @@
+pub mod auth;
+pub mod device;
+pub mod feuilles;
+pub mod import_export;
+pub mod maintenance;
+pub mod password_gen;
+pub mod recovery;
+pub mod saladiers;
+pub mod settings;

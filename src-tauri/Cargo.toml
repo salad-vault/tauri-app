@@ -1,0 +1,66 @@
+[package]
+name = "rust-app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "rust_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Crypto
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
+hkdf = "0.12"
+rand = "0.8"
+secrecy = { version = "0.8", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Error handling
+thiserror = "1"
+
+# Recovery phrase
+bip39 = "2"
+
+# Tauri plugins
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+
+# QR Code generation
+qrcodegen = "1.8"
+
+# Import/Export
+csv = "1"
+quick-xml = "0.36"
+base64 = "0.22"
+
+# Async
+tokio = { version = "1", features = ["sync"] }
+
+# Sync (server communication)
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
+hex = "0.4"
+
