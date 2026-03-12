@@ -6,8 +6,18 @@ use crate::error::AppError;
 type HmacSha256 = Hmac<Sha256>;
 
 /// Static pepper compiled into the binary for HMAC-SHA256 blind indexing.
-/// In production, this should be a securely generated, long-lived secret.
+///
+/// Threat model: this is a compile-time constant by design. The blind index
+/// must be deterministic across all installations so the server can match
+/// users without seeing their email. Knowing the pepper only allows offline
+/// brute-force enumeration against email dictionaries — it does NOT reveal
+/// stored data. Acceptable risk for a local-first desktop app.
 const PEPPER: &[u8] = b"SaladVault_BlindIndex_Pepper_v1";
+
+/// Domain-separation salt for email blind indexing.
+/// Must be identical across all installations for index consistency.
+/// This is NOT a secret — it prevents cross-domain collisions.
+pub const EMAIL_BLIND_INDEX_SALT: &[u8] = b"SaladVault_Email_Salt_v1";
 
 /// Compute a blind index for an email address.
 /// Uses HMAC-SHA256(pepper, normalize(email) + static_salt) to produce a

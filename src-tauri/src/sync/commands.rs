@@ -13,7 +13,7 @@ use crate::sync::client::{
 };
 use crate::sync::{export, import, recovery};
 
-const EMAIL_SALT: &[u8] = b"SaladVault_Email_Salt_v1";
+use crate::crypto::blind_index::EMAIL_BLIND_INDEX_SALT;
 
 // ── Response types for the frontend ──
 
@@ -136,7 +136,7 @@ pub async fn server_register(
     state: State<'_, AppState>,
     args: ServerRegisterArgs,
 ) -> Result<MfaSetupInfo, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_SALT)?;
+    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
     let auth_salt = argon2_kdf::generate_salt();
     let auth_hash = compute_server_auth(args.server_password, auth_salt.to_vec()).await?;
 
@@ -239,7 +239,7 @@ pub async fn server_login(
     state: State<'_, AppState>,
     args: ServerLoginArgs,
 ) -> Result<MfaChallengeInfo, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_SALT)?;
+    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
 
     // Save API URL
     {
