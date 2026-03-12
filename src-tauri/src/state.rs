@@ -69,6 +69,11 @@ impl AppState {
         self.data_dir.join("device_secret.key")
     }
 
+    /// Path to the SQLite database file.
+    pub fn db_path(&self) -> PathBuf {
+        self.data_dir.join("saladvault.db")
+    }
+
     /// Get the current user ID and master key from the session, or return PotagerLocked.
     pub fn require_session(&self) -> Result<(String, [u8; 32]), crate::error::AppError> {
         let session = self

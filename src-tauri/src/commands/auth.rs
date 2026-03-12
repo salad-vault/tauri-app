@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tauri::State;
 
 use crate::crypto::{argon2_kdf, blind_index, keys, xchacha};
@@ -7,6 +9,52 @@ use crate::models::user::User;
 use crate::state::AppState;
 
 use crate::crypto::blind_index::EMAIL_BLIND_INDEX_SALT;
+
+// ── Pre-change backup helpers ───────────────────────────────────────────────
+
+/// Create a backup of the database before a destructive operation.
+/// Uses `VACUUM INTO` for a clean, WAL-merged copy.
+/// Returns the path to the backup file.
+fn create_pre_change_backup(
+    conn: &rusqlite::Connection,
+    data_dir: &std::path::Path,
+) -> Result<PathBuf, AppError> {
+    let backups_dir = data_dir.join("backups");
+    std::fs::create_dir_all(&backups_dir)?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let backup_path = backups_dir.join(format!("saladvault_pre_pwchange_{timestamp}.db"));
+
+    conn.execute("VACUUM INTO ?1", rusqlite::params![backup_path.to_string_lossy().as_ref()])?;
+
+    Ok(backup_path)
+}
+
+/// Remove a backup file after a successful operation. Best-effort.
+fn remove_backup(path: &std::path::Path) {
+    let _ = std::fs::remove_file(path);
+}
+
+/// Remove old backup files, keeping at most `keep` recent ones.
+fn cleanup_old_backups(data_dir: &std::path::Path, keep: usize) {
+    let backups_dir = data_dir.join("backups");
+    if let Ok(entries) = std::fs::read_dir(&backups_dir) {
+        let mut files: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        files.sort_by_key(|e| {
+            std::cmp::Reverse(
+                e.metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            )
+        });
+        for old in files.into_iter().skip(keep) {
+            let _ = std::fs::remove_file(old.path());
+        }
+    }
+}
 
 /// Register a new user account (Potager).
 #[tauri::command]
@@ -210,7 +258,11 @@ pub async fn verify_master_password(
 /// 3. Derive new master key with HKDF
 /// 4. Re-encrypt k_cloud_enc
 /// 5. Re-encrypt all Saladier names
-/// 6. Update DB
+/// 6. Backup DB, then update atomically inside a transaction
+///
+/// Note: The device key (Ingredient Secret) does not change when the password
+/// changes. The BIP39 recovery phrase remains valid. `recovery_confirmed` is
+/// intentionally left untouched.
 #[tauri::command]
 pub async fn change_master_password(
     current_password: String,
@@ -258,17 +310,45 @@ pub async fn change_master_password(
         re_encrypted.push((s.uuid.clone(), new_name_enc, new_nonce));
     }
 
-    // Apply all changes atomically
+    // Apply all changes atomically with a pre-change backup
     {
         let db_lock = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
 
-        db_lock.execute(
-            "UPDATE users SET salt_master = ?1, k_cloud_enc = ?2 WHERE id = ?3",
-            rusqlite::params![new_salt.to_vec(), new_k_cloud_enc, user_id],
-        )?;
+        // Backup first (abort on failure — vault is still untouched)
+        let backup_path = create_pre_change_backup(&db_lock, &state.data_dir)?;
 
-        for (uuid, name_enc, nonce) in &re_encrypted {
-            db::saladiers::update_saladier_name_enc(&db_lock, uuid, name_enc, nonce)?;
+        // Begin transaction (auto-ROLLBACK on drop if not committed)
+        let tx = db_lock
+            .unchecked_transaction()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        let commit_result = (|| -> Result<(), AppError> {
+            tx.execute(
+                "UPDATE users SET salt_master = ?1, k_cloud_enc = ?2 WHERE id = ?3",
+                rusqlite::params![new_salt.to_vec(), new_k_cloud_enc, user_id],
+            )?;
+
+            for (uuid, name_enc, nonce) in &re_encrypted {
+                db::saladiers::update_saladier_name_enc(&tx, uuid, name_enc, nonce)?;
+            }
+
+            tx.commit()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            Ok(())
+        })();
+
+        match commit_result {
+            Ok(()) => {
+                // Success: remove backup, clean up old ones
+                remove_backup(&backup_path);
+                cleanup_old_backups(&state.data_dir, 3);
+            }
+            Err(e) => {
+                // Transaction rolled back automatically on drop.
+                // Backup file is preserved for manual recovery.
+                return Err(e);
+            }
         }
     }
 
@@ -282,4 +362,158 @@ pub async fn change_master_password(
     }
 
     Ok(())
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use crate::crypto::xchacha;
+    use crate::db;
+    use crate::models::saladier::Saladier;
+    use crate::models::user::User;
+
+    /// Verify that when a saladier update fails inside a transaction,
+    /// the user row update is also rolled back (atomicity guarantee).
+    #[test]
+    fn test_change_password_transaction_rollback() {
+        let conn = db::open_test_database().unwrap();
+
+        let salt = [1u8; 32];
+        let fake_master_key = [42u8; 32];
+
+        // Create verification token
+        let (nonce, ct) = xchacha::encrypt(&fake_master_key, b"SALADVAULT_VERIFIED").unwrap();
+        let mut k_cloud_enc = nonce;
+        k_cloud_enc.extend_from_slice(&ct);
+
+        let user = User {
+            id: "test_user".to_string(),
+            salt_master: salt.to_vec(),
+            k_cloud_enc: k_cloud_enc.clone(),
+            recovery_confirmed: false,
+        };
+        db::users::create_user(&conn, &user).unwrap();
+
+        // Create a real saladier
+        let (s_nonce, s_name_enc) = xchacha::encrypt(&fake_master_key, b"My Vault").unwrap();
+        let saladier = Saladier {
+            uuid: "sal-1".to_string(),
+            user_id: "test_user".to_string(),
+            name_enc: s_name_enc.clone(),
+            salt_saladier: vec![0u8; 32],
+            nonce: s_nonce.clone(),
+            verify_enc: vec![0u8; 16],
+            verify_nonce: vec![0u8; 24],
+            hidden: false,
+            failed_attempts: 0,
+        };
+        db::saladiers::create_saladier(&conn, &saladier).unwrap();
+
+        // Start a transaction: update user, then try to update a non-existent saladier
+        let tx = conn.unchecked_transaction().unwrap();
+
+        let new_salt = [99u8; 32];
+        tx.execute(
+            "UPDATE users SET salt_master = ?1 WHERE id = ?2",
+            rusqlite::params![new_salt.to_vec(), "test_user"],
+        )
+        .unwrap();
+
+        // This should fail: non-existent saladier UUID -> SaladierNotFound
+        let result =
+            db::saladiers::update_saladier_name_enc(&tx, "nonexistent-uuid", &[0], &[0]);
+        assert!(result.is_err());
+
+        // Drop tx without commit -> automatic ROLLBACK
+        drop(tx);
+
+        // Verify: user row must be unchanged (rollback worked)
+        let user_after = db::users::get_user(&conn, "test_user").unwrap();
+        assert_eq!(
+            user_after.salt_master,
+            salt.to_vec(),
+            "User salt should be unchanged after rollback"
+        );
+        assert_eq!(
+            user_after.k_cloud_enc, k_cloud_enc,
+            "k_cloud_enc should be unchanged after rollback"
+        );
+
+        // Verify: saladier name_enc must also be unchanged
+        let saladiers = db::saladiers::list_all_saladiers(&conn, "test_user").unwrap();
+        assert_eq!(saladiers.len(), 1);
+        assert_eq!(
+            saladiers[0].name_enc, s_name_enc,
+            "Saladier name_enc should be unchanged after rollback"
+        );
+    }
+
+    /// Verify that a successful transaction commits all changes.
+    #[test]
+    fn test_change_password_transaction_commit() {
+        let conn = db::open_test_database().unwrap();
+
+        let salt = [1u8; 32];
+        let fake_master_key = [42u8; 32];
+
+        let (nonce, ct) = xchacha::encrypt(&fake_master_key, b"SALADVAULT_VERIFIED").unwrap();
+        let mut k_cloud_enc = nonce;
+        k_cloud_enc.extend_from_slice(&ct);
+
+        let user = User {
+            id: "test_user".to_string(),
+            salt_master: salt.to_vec(),
+            k_cloud_enc,
+            recovery_confirmed: false,
+        };
+        db::users::create_user(&conn, &user).unwrap();
+
+        let (s_nonce, s_name_enc) = xchacha::encrypt(&fake_master_key, b"My Vault").unwrap();
+        let saladier = Saladier {
+            uuid: "sal-1".to_string(),
+            user_id: "test_user".to_string(),
+            name_enc: s_name_enc,
+            salt_saladier: vec![0u8; 32],
+            nonce: s_nonce,
+            verify_enc: vec![0u8; 16],
+            verify_nonce: vec![0u8; 24],
+            hidden: false,
+            failed_attempts: 0,
+        };
+        db::saladiers::create_saladier(&conn, &saladier).unwrap();
+
+        // Successful transaction: update user + update saladier
+        let new_salt = [99u8; 32];
+        let new_key = [77u8; 32];
+        let (new_nonce, new_ct) = xchacha::encrypt(&new_key, b"SALADVAULT_VERIFIED").unwrap();
+        let mut new_k_cloud_enc = new_nonce;
+        new_k_cloud_enc.extend_from_slice(&new_ct);
+
+        let (new_s_nonce, new_s_name_enc) = xchacha::encrypt(&new_key, b"My Vault").unwrap();
+
+        let tx = conn.unchecked_transaction().unwrap();
+        tx.execute(
+            "UPDATE users SET salt_master = ?1, k_cloud_enc = ?2 WHERE id = ?3",
+            rusqlite::params![new_salt.to_vec(), new_k_cloud_enc, "test_user"],
+        )
+        .unwrap();
+        db::saladiers::update_saladier_name_enc(&tx, "sal-1", &new_s_name_enc, &new_s_nonce)
+            .unwrap();
+        tx.commit().unwrap();
+
+        // Verify: all changes persisted
+        let user_after = db::users::get_user(&conn, "test_user").unwrap();
+        assert_eq!(
+            user_after.salt_master,
+            new_salt.to_vec(),
+            "User salt should be updated after commit"
+        );
+
+        let saladiers = db::saladiers::list_all_saladiers(&conn, "test_user").unwrap();
+        assert_eq!(
+            saladiers[0].name_enc, new_s_name_enc,
+            "Saladier name should be updated after commit"
+        );
+    }
 }
