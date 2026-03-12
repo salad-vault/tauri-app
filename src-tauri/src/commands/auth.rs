@@ -6,8 +6,7 @@ use crate::error::AppError;
 use crate::models::user::User;
 use crate::state::AppState;
 
-/// Static salt used for blind indexing of emails.
-const BLIND_INDEX_SALT: &[u8] = b"SaladVault_Email_Salt_v1";
+use crate::crypto::blind_index::EMAIL_BLIND_INDEX_SALT;
 
 /// Register a new user account (Potager).
 #[tauri::command]
@@ -16,7 +15,7 @@ pub async fn register(
     master_password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    let user_id = blind_index::compute_blind_index(&email, BLIND_INDEX_SALT)?;
+    let user_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
 
     // Check if user already exists BEFORE generating a new device key.
     // Otherwise, save_device_key would overwrite the existing key and
@@ -80,7 +79,7 @@ pub async fn unlock(
     master_password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    let user_id = blind_index::compute_blind_index(&email, BLIND_INDEX_SALT)?;
+    let user_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
 
     let device_key_path = state.device_key_path();
     let device_key = keys::load_device_key(&device_key_path)?;

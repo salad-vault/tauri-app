@@ -15,12 +15,22 @@ pub fn generate_device_key() -> [u8; 32] {
 }
 
 /// Save the device key to disk at the specified path.
+/// On Unix, restricts file permissions to owner-only (0o600).
 pub fn save_device_key(key: &[u8; 32], path: &Path) -> Result<(), AppError> {
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, key)?;
+
+    // Restrict to owner-read/write only on Unix (Windows uses ACLs via %APPDATA%)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(path, perms)?;
+    }
+
     Ok(())
 }
 

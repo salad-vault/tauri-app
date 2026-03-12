@@ -1,7 +1,7 @@
 mod commands;
-mod crypto;
+pub mod crypto;
 mod db;
-mod error;
+pub mod error;
 mod models;
 mod state;
 mod sync;
