@@ -158,7 +158,7 @@ rust-app/
 
 ### Principe Zero-Knowledge
 
-Aucune donnee en clair n'est jamais stockee. La base de donnees SQLite ne contient que des blobs chiffres. Le serveur (scope futur) ne verra jamais de mot de passe, d'email ou d'entree en clair.
+Aucune donnee en clair n'est jamais stockee. La base de donnees SQLite ne contient que des blobs chiffres. Le serveur ne voit jamais de mot de passe, d'email ou d'entree en clair.
 
 ### Dual-Lock : Reconstruction de la Master Key
 
