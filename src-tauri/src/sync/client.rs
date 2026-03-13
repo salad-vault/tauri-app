@@ -63,11 +63,13 @@ pub struct DeadmanConfigRequest {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct HeartbeatResponse {
     pub last_seen_at: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct DeadmanStatusResponse {
     pub enabled: bool,
     pub inactivity_days: u32,
@@ -355,6 +357,7 @@ impl ApiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn deadman_status(
         &self,
         access_token: &str,

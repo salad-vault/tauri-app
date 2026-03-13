@@ -154,7 +154,7 @@ pub async fn server_register(
         .register(&RegisterRequest {
             blind_id,
             auth_hash,
-            auth_salt: b64.encode(&auth_salt),
+            auth_salt: b64.encode(auth_salt),
         })
         .await?;
 

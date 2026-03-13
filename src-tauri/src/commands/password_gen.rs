@@ -74,7 +74,7 @@ pub async fn generate_password(
     match password_type.as_str() {
         "passphrase" => {
             // Generate a passphrase with the specified number of words
-            let word_count = (length / 5).max(4).min(12); // ~5 chars per word on average
+            let word_count = (length / 5).clamp(4, 12); // ~5 chars per word on average
             let words: Vec<&str> = (0..word_count)
                 .map(|_| {
                     let idx = rng.gen_range(0..PASSPHRASE_WORDS.len());
@@ -85,7 +85,7 @@ pub async fn generate_password(
         }
         _ => {
             // Alphanumeric with special characters
-            let len = length.max(12).min(128) as usize;
+            let len = length.clamp(12, 128) as usize;
             let password: String = (0..len)
                 .map(|_| {
                     let idx = rng.gen_range(0..ALPHA_CHARS.len());
