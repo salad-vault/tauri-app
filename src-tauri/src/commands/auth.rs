@@ -63,11 +63,19 @@ pub async fn register(
     master_password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    let user_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
+    // Load existing device key or generate a new one BEFORE computing the
+    // blind index, so the local PEPPER can be derived from the device key.
+    let device_key_path = state.device_key_path();
+    let (device_key, is_new_key) = match keys::load_device_key(&device_key_path) {
+        Ok(dk) => (dk, false),
+        Err(AppError::KeyFileNotFound) => (keys::generate_device_key(), true),
+        Err(e) => return Err(e),
+    };
 
-    // Check if user already exists BEFORE generating a new device key.
-    // Otherwise, save_device_key would overwrite the existing key and
-    // permanently break the unlock for the existing account.
+    let user_id =
+        blind_index::compute_local_blind_index(&email, EMAIL_BLIND_INDEX_SALT, &device_key)?;
+
+    // Check if user already exists BEFORE saving a new device key.
     {
         let db_lock = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
         if db::users::get_user(&db_lock, &user_id).is_ok() {
@@ -76,7 +84,6 @@ pub async fn register(
     }
 
     let salt_master = argon2_kdf::generate_salt();
-    let device_key = keys::generate_device_key();
 
     // Reconstruct master key in a blocking thread
     let pwd = master_password.into_bytes();
@@ -101,8 +108,10 @@ pub async fn register(
         recovery_confirmed: false,
     };
 
-    let device_key_path = state.device_key_path();
-    keys::save_device_key(&device_key, &device_key_path)?;
+    // Persist device key only if it was freshly generated
+    if is_new_key {
+        keys::save_device_key(&device_key, &device_key_path)?;
+    }
 
     {
         let db_lock = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
@@ -127,15 +136,33 @@ pub async fn unlock(
     master_password: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
-    let user_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
-
     let device_key_path = state.device_key_path();
     let device_key = keys::load_device_key(&device_key_path)?;
 
+    let user_id =
+        blind_index::compute_local_blind_index(&email, EMAIL_BLIND_INDEX_SALT, &device_key)?;
+
     // Scope the db_lock so it is dropped before any .await
-    let user = {
+    let (user_id, user) = {
         let db_lock = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-        db::users::get_user(&db_lock, &user_id)?
+        match db::users::get_user(&db_lock, &user_id) {
+            Ok(u) => (user_id, u),
+            Err(_) => {
+                // Transparent migration: try legacy blind index (hardcoded PEPPER).
+                // Accounts created before the HKDF PEPPER derivation used the
+                // compile-time constant. If found, migrate user_id atomically.
+                let legacy_id =
+                    blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
+                let u = db::users::get_user(&db_lock, &legacy_id)?;
+                let new_id = blind_index::compute_local_blind_index(
+                    &email,
+                    EMAIL_BLIND_INDEX_SALT,
+                    &device_key,
+                )?;
+                migrate_user_id(&db_lock, &legacy_id, &new_id)?;
+                (new_id, u)
+            }
+        }
     };
 
     // Reconstruct master key in a blocking thread (Argon2id is CPU-intensive)
@@ -360,6 +387,40 @@ pub async fn change_master_password(
             master_key_bytes: *new_master_key.as_bytes(),
         });
     }
+
+    Ok(())
+}
+
+/// Migrate a user's primary key from the legacy blind index to the new
+/// device-key-derived blind index. Updates all FK references atomically.
+fn migrate_user_id(
+    conn: &rusqlite::Connection,
+    old_id: &str,
+    new_id: &str,
+) -> Result<(), AppError> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    tx.execute(
+        "UPDATE users SET id = ?1 WHERE id = ?2",
+        rusqlite::params![new_id, old_id],
+    )?;
+    tx.execute(
+        "UPDATE saladiers SET user_id = ?1 WHERE user_id = ?2",
+        rusqlite::params![new_id, old_id],
+    )?;
+    tx.execute(
+        "UPDATE settings SET user_id = ?1 WHERE user_id = ?2",
+        rusqlite::params![new_id, old_id],
+    )?;
+    tx.execute(
+        "UPDATE server_auth SET user_id = ?1 WHERE user_id = ?2",
+        rusqlite::params![new_id, old_id],
+    )?;
+
+    tx.commit()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(())
 }
