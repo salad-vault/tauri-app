@@ -70,6 +70,7 @@ impl AppState {
     }
 
     /// Path to the SQLite database file.
+    #[allow(dead_code)]
     pub fn db_path(&self) -> PathBuf {
         self.data_dir.join("saladvault.db")
     }

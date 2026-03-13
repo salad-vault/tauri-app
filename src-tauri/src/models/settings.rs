@@ -1,59 +1,39 @@
 use serde::{Deserialize, Serialize};
 
 /// Auto-lock timeout options.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum AutoLockTimeout {
     Immediate,
     After1Min,
+    #[default]
     After5Min,
     Never,
 }
 
-impl Default for AutoLockTimeout {
-    fn default() -> Self {
-        Self::After5Min
-    }
-}
-
 /// Password generator type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum PasswordType {
+    #[default]
     Alphanumeric,
     Passphrase,
 }
 
-impl Default for PasswordType {
-    fn default() -> Self {
-        Self::Alphanumeric
-    }
-}
-
 /// Favicon download policy.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum FaviconPolicy {
+    #[default]
     None,
     ProxyAnonymous,
     Direct,
 }
 
-impl Default for FaviconPolicy {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Theme options.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum Theme {
     #[serde(alias = "System")]
+    #[default]
     Dark,
     Light,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self::Dark
-    }
 }
 
 /// User settings stored as JSON in the database.
