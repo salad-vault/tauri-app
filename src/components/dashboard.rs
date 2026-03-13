@@ -38,10 +38,10 @@ struct UnlockHiddenArgs {
 
 #[component]
 pub fn Dashboard(
-    on_select_saladier: WriteSignal<Option<(String, String)>>,
+    on_select_saladier: Callback<(String, String)>,
     on_logout: WriteSignal<bool>,
-    on_show_recovery: WriteSignal<bool>,
-    on_show_settings: WriteSignal<bool>,
+    on_show_recovery: Callback<()>,
+    on_show_settings: Callback<()>,
 ) -> impl IntoView {
     let (saladiers, set_saladiers) = signal(Vec::<SaladierInfo>::new());
     let (show_create, set_show_create) = signal(false);
@@ -209,7 +209,7 @@ pub fn Dashboard(
                     Ok(val) => {
                         if let Ok(Some(info)) = serde_wasm_bindgen::from_value::<Option<SaladierInfo>>(val) {
                             // Hidden saladier found: navigate to it directly
-                            on_select_saladier.set(Some((info.uuid, info.name)));
+                            on_select_saladier.run((info.uuid, info.name));
                             set_search_query.set(String::new());
                         } else {
                             set_search_no_result.set(true);
@@ -231,10 +231,10 @@ pub fn Dashboard(
                     <h1>"Mon Potager"</h1>
                 </div>
                 <div class="header-actions">
-                    <button class="btn btn-ghost" on:click=move |_| on_show_settings.set(true)>
+                    <button class="btn btn-ghost" on:click=move |_| on_show_settings.run(())>
                         "⚙️ Paramètres"
                     </button>
-                    <button class="btn btn-ghost" on:click=move |_| on_show_recovery.set(true)>
+                    <button class="btn btn-ghost" on:click=move |_| on_show_recovery.run(())>
                         "Kit de Secours"
                     </button>
                     <button class="btn btn-ghost btn-danger" on:click=handle_lock>
@@ -444,7 +444,7 @@ pub fn Dashboard(
                                 <div class="card saladier-card">
                                     <div class="saladier-card-content"
                                          on:click=move |_| {
-                                            on_select_saladier.set(Some((uuid_for_click.clone(), name_for_click.clone())));
+                                            on_select_saladier.run((uuid_for_click.clone(), name_for_click.clone()));
                                          }
                                     >
                                         <div class="saladier-icon">"🥗"</div>

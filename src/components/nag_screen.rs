@@ -12,7 +12,7 @@ extern "C" {
 /// before accessing the Dashboard. There is no "Skip" button.
 #[component]
 pub fn NagScreen(
-    on_confirmed: WriteSignal<bool>,
+    on_confirmed: Callback<()>,
 ) -> impl IntoView {
     let (phrase, set_phrase) = signal(String::new());
     let (loading, set_loading) = signal(false);
@@ -43,7 +43,7 @@ pub fn NagScreen(
             let args = serde_wasm_bindgen::to_value(&()).unwrap();
             let _ = invoke("confirm_recovery_saved", args).await;
             set_confirming.set(false);
-            on_confirmed.set(true);
+            on_confirmed.run(());
         });
     };
 

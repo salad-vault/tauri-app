@@ -29,8 +29,8 @@ struct AttemptsInfo {
 pub fn PanicUnlock(
     saladier_uuid: String,
     saladier_name: String,
-    on_unlocked: WriteSignal<bool>,
-    on_cancel: WriteSignal<bool>,
+    on_unlocked: Callback<()>,
+    on_cancel: Callback<()>,
 ) -> impl IntoView {
     let (password, set_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(String::new());
@@ -55,7 +55,7 @@ pub fn PanicUnlock(
             match invoke("open_saladier", args).await {
                 Ok(_) => {
                     set_loading.set(false);
-                    on_unlocked.set(true);
+                    on_unlocked.run(());
                 }
                 Err(_) => {
                     set_loading.set(false);
@@ -75,7 +75,7 @@ pub fn PanicUnlock(
                                         set_destroyed.set(true);
                                         // Auto-return to dashboard after 3s
                                         gloo_timers::callback::Timeout::new(3_000, move || {
-                                            on_cancel.set(true);
+                                            on_cancel.run(());
                                         }).forget();
                                     }
                                     Some(n) => {
@@ -98,7 +98,7 @@ pub fn PanicUnlock(
                             set_error_msg.set("Saladier détruit : nombre maximal de tentatives atteint.".to_string());
                             set_destroyed.set(true);
                             gloo_timers::callback::Timeout::new(3_000, move || {
-                                on_cancel.set(true);
+                                on_cancel.run(());
                             }).forget();
                         }
                     }
@@ -140,7 +140,7 @@ pub fn PanicUnlock(
                     }}
 
                     <div class="form-actions">
-                        <button type="button" class="btn btn-ghost" on:click=move |_| on_cancel.set(true)>
+                        <button type="button" class="btn btn-ghost" on:click=move |_| on_cancel.run(())>
                             "Annuler"
                         </button>
                         <button type="submit" class="btn btn-primary" disabled=move || loading.get() || destroyed.get()>

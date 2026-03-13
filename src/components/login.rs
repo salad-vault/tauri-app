@@ -18,8 +18,8 @@ struct UnlockArgs {
 
 #[component]
 pub fn Login(
-    on_login: WriteSignal<bool>,
-    on_switch_register: WriteSignal<bool>,
+    on_login: Callback<()>,
+    on_switch_register: Callback<()>,
 ) -> impl IntoView {
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
@@ -41,7 +41,7 @@ pub fn Login(
             match invoke("unlock", args).await {
                 Ok(_) => {
                     set_loading.set(false);
-                    on_login.set(true);
+                    on_login.run(());
                 }
                 Err(err) => {
                     set_loading.set(false);
@@ -105,7 +105,7 @@ pub fn Login(
                 <div class="auth-footer">
                     <button
                         class="btn btn-link"
-                        on:click=move |_| on_switch_register.set(true)
+                        on:click=move |_| on_switch_register.run(())
                     >
                         "Créer un compte"
                     </button>

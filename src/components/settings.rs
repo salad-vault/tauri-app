@@ -107,7 +107,7 @@ enum SettingsTab {
 
 #[component]
 pub fn Settings(
-    on_back: WriteSignal<bool>,
+    on_back: Callback<()>,
 ) -> impl IntoView {
     let (active_tab, set_active_tab) = signal(SettingsTab::Security);
     let (settings, set_settings) = signal(UserSettings::default());
@@ -153,7 +153,7 @@ pub fn Settings(
         <div class="settings-page">
             <header class="settings-header">
                 <div class="header-left">
-                    <button class="btn btn-ghost" on:click=move |_| on_back.set(true)>
+                    <button class="btn btn-ghost" on:click=move |_| on_back.run(())>
                         "← Retour"
                     </button>
                     <h1>"Paramètres"</h1>
