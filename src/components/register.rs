@@ -20,8 +20,8 @@ struct RegisterArgs {
 
 #[component]
 pub fn Register(
-    on_registered: WriteSignal<bool>,
-    on_switch_login: WriteSignal<bool>,
+    on_registered: Callback<()>,
+    on_switch_login: Callback<()>,
 ) -> impl IntoView {
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
@@ -58,7 +58,7 @@ pub fn Register(
 
             match result {
                 Ok(_) => {
-                    on_registered.set(true);
+                    on_registered.run(());
                 }
                 Err(err) => {
                     set_error_msg.set(err.as_string().unwrap_or_else(|| "Erreur lors de la création du compte.".to_string()));
@@ -128,7 +128,7 @@ pub fn Register(
                 <div class="auth-footer">
                     <button
                         class="btn btn-link"
-                        on:click=move |_| on_switch_login.set(true)
+                        on:click=move |_| on_switch_login.run(())
                     >
                         "Déjà un compte ? Se connecter"
                     </button>

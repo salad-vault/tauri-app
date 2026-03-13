@@ -51,7 +51,7 @@ struct DeleteFeuilleArgs {
 pub fn SaladierView(
     saladier_uuid: String,
     saladier_name: String,
-    on_back: WriteSignal<bool>,
+    on_back: Callback<()>,
 ) -> impl IntoView {
     let (feuilles, set_feuilles) = signal(Vec::<FeuilleInfo>::new());
     let (show_form, set_show_form) = signal(false);
@@ -144,7 +144,7 @@ pub fn SaladierView(
         <div class="saladier-view">
             <header class="dashboard-header">
                 <div class="header-left">
-                    <button class="btn btn-ghost" on:click=move |_| on_back.set(true)>
+                    <button class="btn btn-ghost" on:click=move |_| on_back.run(())>
                         "← Retour"
                     </button>
                     <span class="header-icon">"🥗"</span>

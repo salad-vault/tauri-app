@@ -103,30 +103,6 @@ fn check_recovery_and_navigate(
 pub fn App() -> impl IntoView {
     let (current_view, set_current_view) = signal(AppView::Login);
 
-    // Auth signals
-    let (logged_in, set_logged_in) = signal(false);
-    let (switch_register, set_switch_register) = signal(false);
-    let (switch_login, set_switch_login) = signal(false);
-    let (registered, set_registered) = signal(false);
-    let (logout, set_logout) = signal(false);
-
-    // Nag Screen signal
-    let (nag_confirmed, set_nag_confirmed) = signal(false);
-
-    // Saladier signals
-    let (selected_saladier, set_selected_saladier) = signal(Option::<(String, String)>::None);
-    let (saladier_unlocked, set_saladier_unlocked) = signal(false);
-    let (saladier_cancel, set_saladier_cancel) = signal(false);
-    let (back_to_dashboard, set_back_to_dashboard) = signal(false);
-
-    // Recovery signal
-    let (show_recovery, set_show_recovery) = signal(false);
-    let (close_recovery, set_close_recovery) = signal(false);
-
-    // Settings signals
-    let (show_settings, set_show_settings) = signal(false);
-    let (settings_back, set_settings_back) = signal(false);
-
     // User settings (loaded after login for auto-lock + screenshot protection)
     let (user_settings, set_user_settings) = signal(Option::<UserSettings>::None);
 
@@ -136,12 +112,110 @@ pub fn App() -> impl IntoView {
     let listeners: Rc<RefCell<Vec<(String, wasm_bindgen::closure::Closure<dyn Fn()>)>>> =
         Rc::new(RefCell::new(Vec::new()));
 
-    // After login: check recovery status, load settings, start auto-lock
-    Effect::new(move |_| {
-        if logged_in.get() {
-            check_recovery_and_navigate(set_current_view, set_user_settings);
+    // ── Callbacks for child components ──
+    // Direct navigation callbacks replace the previous boolean signal + Effect
+    // intermediaries, eliminating the "set true → effect resets to false" anti-pattern.
+
+    let on_login = Callback::new(move |_: ()| {
+        check_recovery_and_navigate(set_current_view, set_user_settings);
+    });
+
+    let on_switch_register = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Register);
+    });
+
+    let on_switch_login = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Login);
+    });
+
+    let on_registered = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::NagScreen);
+    });
+
+    let on_nag_confirmed = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    let on_select_saladier = Callback::new(move |(uuid, name): (String, String)| {
+        set_current_view.set(AppView::SaladierUnlock { uuid, name });
+    });
+
+    let on_saladier_unlocked = Callback::new(move |_: ()| {
+        if let AppView::SaladierUnlock { uuid, name } = current_view.get_untracked() {
+            set_current_view.set(AppView::SaladierView { uuid, name });
         }
     });
+
+    let on_saladier_cancel = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    let on_back_to_dashboard = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    let on_show_recovery = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Recovery);
+    });
+
+    let on_close_recovery = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    let on_show_settings = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Settings);
+    });
+
+    let on_settings_back = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    // Logout: kept as signal + Effect because cleanup captures non-Send Rc types
+    let (on_logout, set_on_logout) = signal(false);
+    {
+        let interval_handle = interval_handle.clone();
+        let listeners = listeners.clone();
+        Effect::new(move |_| {
+            if on_logout.get() {
+                set_on_logout.set(false);
+                // Cleanup auto-lock
+                *interval_handle.borrow_mut() = None; // drops Interval, stopping it
+                {
+                    let window = web_sys::window().unwrap();
+                    let document = window.document().unwrap();
+                    let mut ls = listeners.borrow_mut();
+                    for (event, closure) in ls.drain(..) {
+                        if event == "visibilitychange" {
+                            let _ = document.remove_event_listener_with_callback(
+                                &event,
+                                closure.as_ref().unchecked_ref(),
+                            );
+                        } else {
+                            let _ = window.remove_event_listener_with_callback(
+                                &event,
+                                closure.as_ref().unchecked_ref(),
+                            );
+                        }
+                    }
+                }
+                set_user_settings.set(None);
+
+                // Reset theme to dark on logout (default for login screen)
+                apply_theme(&Theme::Dark);
+
+                // Re-enable screenshot protection on logout (security default)
+                apply_screenshot_protection(true);
+
+                // Call lock command
+                spawn_local(async {
+                    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+                    let _ = invoke("lock", args).await;
+                });
+
+                set_current_view.set(AppView::Login);
+            }
+        });
+    }
 
     // Apply theme reactively when user_settings change (e.g. toggle in Settings)
     Effect::new(move |_| {
@@ -208,7 +282,6 @@ pub fn App() -> impl IntoView {
                 let is_immediate = settings.auto_lock_timeout == AutoLockTimeout::Immediate;
                 if settings.auto_lock_on_sleep || is_immediate {
                     let set_view = set_current_view;
-                    let set_logged = set_logged_in;
                     let pending_lock: Rc<RefCell<Option<gloo_timers::callback::Timeout>>> =
                         Rc::new(RefCell::new(None));
                     let pending_lock_inner = pending_lock.clone();
@@ -220,14 +293,12 @@ pub fn App() -> impl IntoView {
                             .unwrap_or(false);
                         if hidden {
                             let set_view = set_view;
-                            let set_logged = set_logged;
                             let do_lock = move || {
                                 spawn_local(async move {
                                     let args = serde_wasm_bindgen::to_value(&()).unwrap();
                                     let _ = invoke("lock", args).await;
                                 });
                                 apply_screenshot_protection(true);
-                                set_logged.set(false);
                                 set_view.set(AppView::Login);
                             };
                             if is_immediate {
@@ -264,10 +335,8 @@ pub fn App() -> impl IntoView {
                 if let Some(max_secs) = timeout_secs {
                     if settings.auto_lock_on_inactivity {
                         let set_view = set_current_view;
-                        let set_logged = set_logged_in;
                         let interval = gloo_timers::callback::Interval::new(10_000, move || {
                             let set_view = set_view;
-                            let set_logged = set_logged;
                             spawn_local(async move {
                                 let args = serde_wasm_bindgen::to_value(&()).unwrap();
                                 if let Ok(result) = invoke("get_inactivity_seconds", args).await {
@@ -278,7 +347,6 @@ pub fn App() -> impl IntoView {
                                                 serde_wasm_bindgen::to_value(&()).unwrap();
                                             let _ = invoke("lock", lock_args).await;
                                             apply_screenshot_protection(true);
-                                            set_logged.set(false);
                                             set_view.set(AppView::Login);
                                         }
                                     }
@@ -292,141 +360,6 @@ pub fn App() -> impl IntoView {
         });
     }
 
-    // After register: always go to NagScreen (new account => recovery not confirmed)
-    Effect::new(move |_| {
-        if registered.get() {
-            set_registered.set(false);
-            set_current_view.set(AppView::NagScreen);
-        }
-    });
-
-    // After nag screen confirmed: go to Dashboard
-    Effect::new(move |_| {
-        if nag_confirmed.get() {
-            set_nag_confirmed.set(false);
-            set_current_view.set(AppView::Dashboard);
-        }
-    });
-
-    Effect::new(move |_| {
-        if switch_register.get() {
-            set_switch_register.set(false);
-            set_current_view.set(AppView::Register);
-        }
-    });
-
-    Effect::new(move |_| {
-        if switch_login.get() {
-            set_switch_login.set(false);
-            set_current_view.set(AppView::Login);
-        }
-    });
-
-    {
-        let interval_handle = interval_handle.clone();
-        let listeners = listeners.clone();
-        Effect::new(move |_| {
-            if logout.get() {
-                set_logout.set(false);
-                set_logged_in.set(false);
-
-                // Cleanup auto-lock
-                *interval_handle.borrow_mut() = None; // drops Interval, stopping it
-                {
-                    let window = web_sys::window().unwrap();
-                    let document = window.document().unwrap();
-                    let mut ls = listeners.borrow_mut();
-                    for (event, closure) in ls.drain(..) {
-                        if event == "visibilitychange" {
-                            let _ = document.remove_event_listener_with_callback(
-                                &event,
-                                closure.as_ref().unchecked_ref(),
-                            );
-                        } else {
-                            let _ = window.remove_event_listener_with_callback(
-                                &event,
-                                closure.as_ref().unchecked_ref(),
-                            );
-                        }
-                    }
-                }
-                set_user_settings.set(None);
-
-                // Reset theme to dark on logout (default for login screen)
-                apply_theme(&Theme::Dark);
-
-                // Re-enable screenshot protection on logout (security default)
-                apply_screenshot_protection(true);
-
-                // Call lock command
-                spawn_local(async {
-                    let args = serde_wasm_bindgen::to_value(&()).unwrap();
-                    let _ = invoke("lock", args).await;
-                });
-
-                set_current_view.set(AppView::Login);
-            }
-        });
-    }
-
-    Effect::new(move |_| {
-        if let Some((uuid, name)) = selected_saladier.get() {
-            set_selected_saladier.set(None);
-            set_current_view.set(AppView::SaladierUnlock { uuid, name });
-        }
-    });
-
-    Effect::new(move |_| {
-        if saladier_unlocked.get() {
-            set_saladier_unlocked.set(false);
-            if let AppView::SaladierUnlock { uuid, name } = current_view.get_untracked() {
-                set_current_view.set(AppView::SaladierView { uuid, name });
-            }
-        }
-    });
-
-    Effect::new(move |_| {
-        if saladier_cancel.get() {
-            set_saladier_cancel.set(false);
-            set_current_view.set(AppView::Dashboard);
-        }
-    });
-
-    Effect::new(move |_| {
-        if back_to_dashboard.get() {
-            set_back_to_dashboard.set(false);
-            set_current_view.set(AppView::Dashboard);
-        }
-    });
-
-    Effect::new(move |_| {
-        if show_recovery.get() {
-            set_show_recovery.set(false);
-            set_current_view.set(AppView::Recovery);
-        }
-    });
-
-    Effect::new(move |_| {
-        if close_recovery.get() {
-            set_close_recovery.set(false);
-            set_current_view.set(AppView::Dashboard);
-        }
-    });
-
-    Effect::new(move |_| {
-        if show_settings.get() {
-            set_show_settings.set(false);
-            set_current_view.set(AppView::Settings);
-        }
-    });
-
-    Effect::new(move |_| {
-        if settings_back.get() {
-            set_settings_back.set(false);
-            set_current_view.set(AppView::Dashboard);
-        }
-    });
-
     view! {
         <div class="app">
             {move || {
@@ -434,31 +367,31 @@ pub fn App() -> impl IntoView {
                     AppView::Login => {
                         view! {
                             <Login
-                                on_login=set_logged_in
-                                on_switch_register=set_switch_register
+                                on_login=on_login
+                                on_switch_register=on_switch_register
                             />
                         }.into_any()
                     }
                     AppView::Register => {
                         view! {
                             <Register
-                                on_registered=set_registered
-                                on_switch_login=set_switch_login
+                                on_registered=on_registered
+                                on_switch_login=on_switch_login
                             />
                         }.into_any()
                     }
                     AppView::NagScreen => {
                         view! {
-                            <NagScreen on_confirmed=set_nag_confirmed />
+                            <NagScreen on_confirmed=on_nag_confirmed />
                         }.into_any()
                     }
                     AppView::Dashboard => {
                         view! {
                             <Dashboard
-                                on_select_saladier=set_selected_saladier
-                                on_logout=set_logout
-                                on_show_recovery=set_show_recovery
-                                on_show_settings=set_show_settings
+                                on_select_saladier=on_select_saladier
+                                on_logout=set_on_logout
+                                on_show_recovery=on_show_recovery
+                                on_show_settings=on_show_settings
                             />
                         }.into_any()
                     }
@@ -467,8 +400,8 @@ pub fn App() -> impl IntoView {
                             <PanicUnlock
                                 saladier_uuid=uuid
                                 saladier_name=name
-                                on_unlocked=set_saladier_unlocked
-                                on_cancel=set_saladier_cancel
+                                on_unlocked=on_saladier_unlocked
+                                on_cancel=on_saladier_cancel
                             />
                         }.into_any()
                     }
@@ -477,18 +410,18 @@ pub fn App() -> impl IntoView {
                             <SaladierView
                                 saladier_uuid=uuid
                                 saladier_name=name
-                                on_back=set_back_to_dashboard
+                                on_back=on_back_to_dashboard
                             />
                         }.into_any()
                     }
                     AppView::Recovery => {
                         view! {
-                            <Recovery on_close=set_close_recovery />
+                            <Recovery on_close=on_close_recovery />
                         }.into_any()
                     }
                     AppView::Settings => {
                         view! {
-                            <Settings on_back=set_settings_back />
+                            <Settings on_back=on_settings_back />
                         }.into_any()
                     }
                 }

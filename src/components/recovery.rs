@@ -16,7 +16,7 @@ struct RecoverArgs {
 
 #[component]
 pub fn Recovery(
-    on_close: WriteSignal<bool>,
+    on_close: Callback<()>,
 ) -> impl IntoView {
     let (phrase, set_phrase) = signal(String::new());
     let (recovery_input, set_recovery_input) = signal(String::new());
@@ -166,7 +166,7 @@ pub fn Recovery(
                 </div>
 
                 <div class="form-actions">
-                    <button class="btn btn-ghost" on:click=move |_| on_close.set(true)>
+                    <button class="btn btn-ghost" on:click=move |_| on_close.run(())>
                         "Fermer"
                     </button>
                 </div>
