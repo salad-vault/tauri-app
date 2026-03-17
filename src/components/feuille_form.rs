@@ -4,6 +4,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::components::saladier_view::{FeuilleData, FeuilleInfo};
+use crate::i18n::{t, Language};
 
 #[wasm_bindgen]
 extern "C" {
@@ -31,6 +32,7 @@ pub fn FeuilleForm(
     on_saved: WriteSignal<bool>,
     on_cancel: WriteSignal<bool>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let is_edit = editing.is_some();
     let edit_uuid = editing.as_ref().map(|f| f.uuid.clone()).unwrap_or_default();
 
@@ -92,7 +94,7 @@ pub fn FeuilleForm(
                     on_saved.set(true);
                 }
                 Err(err) => {
-                    set_error_msg.set(err.as_string().unwrap_or_else(|| "Erreur lors de l'enregistrement.".to_string()));
+                    set_error_msg.set(err.as_string().unwrap_or_else(|| t("ff.error_saving", lang.get()).to_string()));
                 }
             }
         });
@@ -102,15 +104,15 @@ pub fn FeuilleForm(
         <div class="modal-overlay">
             <div class="modal-card modal-wide">
                 <div class="modal-header">
-                    <h2>{if is_edit { "Modifier la Feuille" } else { "Nouvelle Feuille" }}</h2>
+                    <h2>{move || if is_edit { t("ff.edit_title", lang.get()) } else { t("ff.new_title", lang.get()) }}</h2>
                 </div>
 
                 <form class="auth-form" on:submit=handle_submit>
                     <div class="form-group">
-                        <label>"Titre"</label>
+                        <label>{move || t("ff.title", lang.get())}</label>
                         <input
                             type="text"
-                            placeholder="ex: Gmail, GitHub..."
+                            placeholder=move || t("ff.title_placeholder", lang.get())
                             required=true
                             prop:value=move || title.get()
                             on:input=move |ev| set_title.set(event_target_value(&ev))
@@ -119,20 +121,20 @@ pub fn FeuilleForm(
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label>"Identifiant"</label>
+                            <label>{move || t("ff.username", lang.get())}</label>
                             <input
                                 type="text"
-                                placeholder="Nom d'utilisateur ou email"
+                                placeholder=move || t("ff.username_placeholder", lang.get())
                                 prop:value=move || username.get()
                                 on:input=move |ev| set_username.set(event_target_value(&ev))
                             />
                         </div>
 
                         <div class="form-group">
-                            <label>"Mot de passe"</label>
+                            <label>{move || t("password", lang.get())}</label>
                             <input
                                 type="password"
-                                placeholder="Mot de passe"
+                                placeholder=move || t("ff.password_placeholder", lang.get())
                                 prop:value=move || password.get()
                                 on:input=move |ev| set_password.set(event_target_value(&ev))
                             />
@@ -150,9 +152,9 @@ pub fn FeuilleForm(
                     </div>
 
                     <div class="form-group">
-                        <label>"Notes"</label>
+                        <label>{move || t("notes", lang.get())}</label>
                         <textarea
-                            placeholder="Notes additionnelles..."
+                            placeholder=move || t("ff.notes_placeholder", lang.get())
                             rows=3
                             prop:value=move || notes.get()
                             on:input=move |ev| set_notes.set(event_target_value(&ev))
@@ -170,10 +172,10 @@ pub fn FeuilleForm(
 
                     <div class="form-actions">
                         <button type="button" class="btn btn-ghost" on:click=move |_| on_cancel.set(true)>
-                            "Annuler"
+                            {move || t("cancel", lang.get())}
                         </button>
                         <button type="submit" class="btn btn-primary" disabled=move || loading.get()>
-                            {move || if loading.get() { "Enregistrement..." } else if is_edit { "Mettre à jour" } else { "Créer" }}
+                            {move || if loading.get() { t("ff.saving", lang.get()) } else if is_edit { t("ff.update", lang.get()) } else { t("create", lang.get()) }}
                         </button>
                     </div>
                 </form>

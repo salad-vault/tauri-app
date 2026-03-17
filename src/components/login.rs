@@ -3,6 +3,8 @@ use leptos::{ev::SubmitEvent, prelude::*};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -21,6 +23,8 @@ pub fn Login(
     on_login: Callback<()>,
     on_switch_register: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
+
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (error_msg, set_error_msg) = signal(String::new());
@@ -47,7 +51,7 @@ pub fn Login(
                     set_loading.set(false);
                     let msg = err.as_string().unwrap_or_default();
                     if msg.is_empty() {
-                        set_error_msg.set("Identifiants invalides".to_string());
+                        set_error_msg.set(t("login.invalid_credentials", lang.get()).to_string());
                     } else {
                         set_error_msg.set(msg);
                     }
@@ -62,23 +66,23 @@ pub fn Login(
                 <div class="auth-header">
                     <div class="auth-icon">"🥗"</div>
                     <h1 class="auth-title">"SaladVault"</h1>
-                    <p class="auth-subtitle">"Déverrouillez votre Potager"</p>
+                    <p class="auth-subtitle">{move || t("login.subtitle", lang.get())}</p>
                 </div>
 
                 <form class="auth-form" on:submit=handle_submit>
                     <div class="form-group">
-                        <label for="email">"Email"</label>
+                        <label for="email">{move || t("email", lang.get())}</label>
                         <input
                             id="email"
                             type="email"
-                            placeholder="votre@email.com"
+                            placeholder=move || t("login.email_placeholder", lang.get())
                             required=true
                             on:input=move |ev| set_email.set(event_target_value(&ev))
                         />
                     </div>
 
                     <div class="form-group">
-                        <label for="password">"Mot de Passe Maître"</label>
+                        <label for="password">{move || t("master_password", lang.get())}</label>
                         <input
                             id="password"
                             type="password"
@@ -98,7 +102,7 @@ pub fn Login(
                     }}
 
                     <button type="submit" class="btn btn-primary" disabled=move || loading.get()>
-                        {move || if loading.get() { "Déverrouillage..." } else { "Déverrouiller" }}
+                        {move || if loading.get() { t("login.unlocking", lang.get()) } else { t("login.unlock", lang.get()) }}
                     </button>
                 </form>
 
@@ -107,7 +111,7 @@ pub fn Login(
                         class="btn btn-link"
                         on:click=move |_| on_switch_register.run(())
                     >
-                        "Créer un compte"
+                        {move || t("login.create_account", lang.get())}
                     </button>
                 </div>
             </div>

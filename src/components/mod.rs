@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod documentation;
 pub mod feuille_form;
 pub mod login;
 pub mod nag_screen;

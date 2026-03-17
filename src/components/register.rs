@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::components::password_utils::validate_password;
+use crate::i18n::{t, Language};
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,6 +24,8 @@ pub fn Register(
     on_registered: Callback<()>,
     on_switch_login: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
+
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (confirm_password, set_confirm_password) = signal(String::new());
@@ -33,11 +36,11 @@ pub fn Register(
         ev.prevent_default();
 
         if password.get_untracked() != confirm_password.get_untracked() {
-            set_error_msg.set("Les mots de passe ne correspondent pas.".to_string());
+            set_error_msg.set(t("register.passwords_mismatch", lang.get()).to_string());
             return;
         }
 
-        if let Err(msg) = validate_password(&password.get_untracked()) {
+        if let Err(msg) = validate_password(&password.get_untracked(), lang.get_untracked()) {
             set_error_msg.set(msg);
             return;
         }
@@ -61,7 +64,7 @@ pub fn Register(
                     on_registered.run(());
                 }
                 Err(err) => {
-                    set_error_msg.set(err.as_string().unwrap_or_else(|| "Erreur lors de la création du compte.".to_string()));
+                    set_error_msg.set(err.as_string().unwrap_or_else(|| t("register.error_creating", lang.get()).to_string()));
                 }
             }
         });
@@ -72,36 +75,36 @@ pub fn Register(
             <div class="auth-card">
                 <div class="auth-header">
                     <div class="auth-icon">"🌱"</div>
-                    <h1 class="auth-title">"Créer votre Potager"</h1>
-                    <p class="auth-subtitle">"Configurez votre espace sécurisé"</p>
+                    <h1 class="auth-title">{move || t("register.title", lang.get())}</h1>
+                    <p class="auth-subtitle">{move || t("register.subtitle", lang.get())}</p>
                 </div>
 
                 <form class="auth-form" on:submit=handle_submit>
                     <div class="form-group">
-                        <label for="reg-email">"Email"</label>
+                        <label for="reg-email">{move || t("email", lang.get())}</label>
                         <input
                             id="reg-email"
                             type="email"
-                            placeholder="votre@email.com"
+                            placeholder=move || t("login.email_placeholder", lang.get())
                             required=true
                             on:input=move |ev| set_email.set(event_target_value(&ev))
                         />
-                        <span class="form-hint">"Votre email ne sera jamais stocké en clair."</span>
+                        <span class="form-hint">{move || t("register.email_hint", lang.get())}</span>
                     </div>
 
                     <div class="form-group">
-                        <label for="reg-password">"Mot de Passe Maître"</label>
+                        <label for="reg-password">{move || t("master_password", lang.get())}</label>
                         <input
                             id="reg-password"
                             type="password"
-                            placeholder="Min. 16 caractères, maj, min, chiffre, spécial"
+                            placeholder=move || t("register.password_placeholder", lang.get())
                             required=true
                             on:input=move |ev| set_password.set(event_target_value(&ev))
                         />
                     </div>
 
                     <div class="form-group">
-                        <label for="reg-confirm">"Confirmer le Mot de Passe"</label>
+                        <label for="reg-confirm">{move || t("register.confirm_password", lang.get())}</label>
                         <input
                             id="reg-confirm"
                             type="password"
@@ -121,7 +124,7 @@ pub fn Register(
                     }}
 
                     <button type="submit" class="btn btn-primary" disabled=move || loading.get()>
-                        {move || if loading.get() { "Création..." } else { "Créer le compte" }}
+                        {move || if loading.get() { t("register.creating", lang.get()) } else { t("register.create_account", lang.get()) }}
                     </button>
                 </form>
 
@@ -130,7 +133,7 @@ pub fn Register(
                         class="btn btn-link"
                         on:click=move |_| on_switch_login.run(())
                     >
-                        "Déjà un compte ? Se connecter"
+                        {move || t("register.already_account", lang.get())}
                     </button>
                 </div>
             </div>

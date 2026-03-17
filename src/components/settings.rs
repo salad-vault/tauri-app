@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
 use crate::components::settings_security::SettingsSecurity;
 use crate::components::settings_keys::SettingsKeys;
 use crate::components::settings_devices::SettingsDevices;
@@ -109,6 +110,7 @@ enum SettingsTab {
 pub fn Settings(
     on_back: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (active_tab, set_active_tab) = signal(SettingsTab::Security);
     let (settings, set_settings) = signal(UserSettings::default());
     let (loading, set_loading) = signal(true);
@@ -137,9 +139,9 @@ pub fn Settings(
             let args = serde_wasm_bindgen::to_value(&SaveArgs { settings: current }).unwrap();
             let result = invoke("save_settings", args).await;
             if result.is_null() || result.is_undefined() || result.as_string().map(|s| s.is_empty()).unwrap_or(true) {
-                set_save_msg.set("Paramètres sauvegardés".to_string());
+                set_save_msg.set(t("settings.saved", lang.get()).to_string());
             } else {
-                set_save_msg.set("Erreur lors de la sauvegarde".to_string());
+                set_save_msg.set(t("settings.save_error", lang.get()).to_string());
             }
             // Clear message after 2 seconds
             gloo_timers::callback::Timeout::new(2_000, move || {
@@ -154,9 +156,9 @@ pub fn Settings(
             <header class="settings-header">
                 <div class="header-left">
                     <button class="btn btn-ghost" on:click=move |_| on_back.run(())>
-                        "← Retour"
+                        {move || t("back", lang.get())}
                     </button>
-                    <h1>"Paramètres"</h1>
+                    <h1>{move || t("settings.title", lang.get())}</h1>
                 </div>
                 {move || {
                     let msg = save_msg.get();
@@ -177,70 +179,70 @@ pub fn Settings(
                         on:click=move |_| set_active_tab.set(SettingsTab::Security)
                     >
                         <span class="nav-icon">"🛡️"</span>
-                        <span>"Sécurité"</span>
+                        <span>{move || t("settings.tab_security", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Keys { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Keys)
                     >
                         <span class="nav-icon">"🔑"</span>
-                        <span>"Clés"</span>
+                        <span>{move || t("settings.tab_keys", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Devices { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Devices)
                     >
                         <span class="nav-icon">"📱"</span>
-                        <span>"Appareils"</span>
+                        <span>{move || t("settings.tab_devices", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Saladiers { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Saladiers)
                     >
                         <span class="nav-icon">"🥗"</span>
-                        <span>"Saladiers"</span>
+                        <span>{move || t("settings.tab_saladiers", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Data { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Data)
                     >
                         <span class="nav-icon">"💾"</span>
-                        <span>"Données"</span>
+                        <span>{move || t("settings.tab_data", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Privacy { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Privacy)
                     >
                         <span class="nav-icon">"🌐"</span>
-                        <span>"Vie privée"</span>
+                        <span>{move || t("settings.tab_privacy", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::General { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::General)
                     >
                         <span class="nav-icon">"⚙️"</span>
-                        <span>"Général"</span>
+                        <span>{move || t("settings.tab_general", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Sync { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Sync)
                     >
                         <span class="nav-icon">"☁️"</span>
-                        <span>"Sync"</span>
+                        <span>{move || t("sync.title", lang.get())}</span>
                     </button>
                     <button
                         class=move || if active_tab.get() == SettingsTab::Subscription { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Subscription)
                     >
                         <span class="nav-icon">"💎"</span>
-                        <span>"Abonnement"</span>
+                        <span>{move || t("settings.tab_subscription", lang.get())}</span>
                     </button>
                 </nav>
 
                 <div class="settings-content">
                     {move || {
                         if loading.get() {
-                            return view! { <div class="settings-loading">"Chargement..."</div> }.into_any();
+                            return view! { <div class="settings-loading">{move || t("loading", lang.get())}</div> }.into_any();
                         }
 
                         let save = save_settings.clone();

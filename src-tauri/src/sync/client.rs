@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -114,8 +116,18 @@ struct ApiErrorResponse {
 
 impl ApiClient {
     pub fn new(base_url: &str) -> Self {
+        let enforce_https = base_url.starts_with("https://");
+
+        let client = Client::builder()
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .https_only(enforce_https)
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
-            client: Client::new(),
+            client,
             base_url: base_url.trim_end_matches('/').to_string(),
         }
     }

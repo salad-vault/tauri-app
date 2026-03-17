@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
 use crate::components::settings::UserSettings;
 
 #[wasm_bindgen]
@@ -23,6 +24,7 @@ pub fn SettingsSaladiers(
     set_settings: WriteSignal<UserSettings>,
     on_save: impl Fn() + Clone + Send + 'static,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (saladiers, set_saladiers) = signal(Vec::<SaladierInfo>::new());
     let save = on_save.clone();
 
@@ -40,16 +42,16 @@ pub fn SettingsSaladiers(
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"🥗 Gestion des Saladiers"</h2>
-            <p class="settings-section-desc">"Configurez le cloisonnement et les politiques de vos coffres."</p>
+            <h2 class="settings-section-title">{move || t("saladiers.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("saladiers.section_desc", lang.get())}</p>
 
             <div class="settings-group">
-                <h3>"Saladiers actifs"</h3>
+                <h3>{move || t("saladiers.active", lang.get())}</h3>
                 <div class="saladier-list">
                     {move || {
                         let list = saladiers.get();
                         if list.is_empty() {
-                            view! { <p class="settings-hint">"Aucun Saladier visible."</p> }.into_any()
+                            view! { <p class="settings-hint">{move || t("saladiers.none_visible", lang.get())}</p> }.into_any()
                         } else {
                             view! {
                                 <div class="settings-saladier-grid">
@@ -69,9 +71,9 @@ pub fn SettingsSaladiers(
             </div>
 
             <div class="settings-group">
-                <h3>"Politique de sécurité"</h3>
+                <h3>{move || t("saladiers.security_policy", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Détruire les données après X tentatives échouées"</label>
+                    <label>{move || t("saladiers.max_attempts", lang.get())}</label>
                     <input
                         type="number"
                         class="settings-input-sm"
@@ -90,11 +92,11 @@ pub fn SettingsSaladiers(
                         }
                     />
                 </div>
-                <p class="settings-hint">"0 = désactivé. Après X tentatives de mot de passe échouées, les données locales du Saladier sont détruites."</p>
+                <p class="settings-hint">{move || t("saladiers.max_attempts_hint", lang.get())}</p>
                 {move || {
                     if settings.get().max_failed_attempts == 0 {
                         view! {
-                            <p class="settings-hint settings-hint-warn">"L'auto-destruction est désactivée — un nombre illimité de tentatives est autorisé."</p>
+                            <p class="settings-hint settings-hint-warn">{move || t("saladiers.autodestruct_disabled_warn", lang.get())}</p>
                         }.into_any()
                     } else {
                         view! { <div></div> }.into_any()

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::components::password_utils::validate_password;
+use crate::i18n::{t, Language};
 
 #[wasm_bindgen]
 extern "C" {
@@ -42,7 +43,10 @@ pub fn Dashboard(
     on_logout: WriteSignal<bool>,
     on_show_recovery: Callback<()>,
     on_show_settings: Callback<()>,
+    on_show_docs: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
+
     let (saladiers, set_saladiers) = signal(Vec::<SaladierInfo>::new());
     let (show_create, set_show_create) = signal(false);
     let (new_name, set_new_name) = signal(String::new());
@@ -84,7 +88,7 @@ pub fn Dashboard(
         ev.prevent_default();
 
         let pwd = new_password.get_untracked();
-        if let Err(msg) = validate_password(&pwd) {
+        if let Err(msg) = validate_password(&pwd, lang.get_untracked()) {
             set_error_msg.set(msg);
             return;
         }
@@ -123,11 +127,11 @@ pub fn Dashboard(
                             }
                         }
                     } else {
-                        set_error_msg.set("Erreur lors de la création du Saladier.".to_string());
+                        set_error_msg.set(t("dash.error_creating_saladier", lang.get_untracked()).to_string());
                     }
                 }
                 Err(err) => {
-                    set_error_msg.set(err.as_string().unwrap_or_else(|| "Erreur lors de la création du Saladier.".to_string()));
+                    set_error_msg.set(err.as_string().unwrap_or_else(|| t("dash.error_creating_saladier", lang.get_untracked()).to_string()));
                 }
             }
         });
@@ -178,7 +182,7 @@ pub fn Dashboard(
                         }
                     }
                     Err(_) => {
-                        set_delete_error.set("Mot de passe incorrect.".to_string());
+                        set_delete_error.set(t("dash.wrong_password", lang.get_untracked()).to_string());
                     }
                 }
             });
@@ -228,17 +232,20 @@ pub fn Dashboard(
             <header class="dashboard-header">
                 <div class="header-left">
                     <span class="header-icon">"🥗"</span>
-                    <h1>"Mon Potager"</h1>
+                    <h1>{move || t("dash.my_garden", lang.get())}</h1>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-ghost" on:click=move |_| on_show_docs.run(())>
+                        {move || t("doc.title", lang.get())}
+                    </button>
                     <button class="btn btn-ghost" on:click=move |_| on_show_settings.run(())>
-                        "⚙️ Paramètres"
+                        {move || t("dash.settings", lang.get())}
                     </button>
                     <button class="btn btn-ghost" on:click=move |_| on_show_recovery.run(())>
-                        "Kit de Secours"
+                        {move || t("dash.recovery_kit", lang.get())}
                     </button>
                     <button class="btn btn-ghost btn-danger" on:click=handle_lock>
-                        "Se déconnecter"
+                        {move || t("dash.sign_out", lang.get())}
                     </button>
                 </div>
             </header>
@@ -250,15 +257,15 @@ pub fn Dashboard(
                         <div class="modal-overlay">
                             <div class="modal-card">
                                 <div class="modal-header">
-                                    <h2>"Se déconnecter"</h2>
-                                    <p class="modal-subtitle">"Êtes-vous sûr de vouloir vous déconnecter ? Vos Saladiers ouverts seront verrouillés."</p>
+                                    <h2>{move || t("dash.sign_out", lang.get())}</h2>
+                                    <p class="modal-subtitle">{move || t("dash.logout_confirm", lang.get())}</p>
                                 </div>
                                 <div class="form-actions">
                                     <button class="btn btn-ghost" on:click=move |_| set_show_logout_confirm.set(false)>
-                                        "Annuler"
+                                        {move || t("cancel", lang.get())}
                                     </button>
                                     <button class="btn btn-primary btn-danger" on:click=confirm_logout>
-                                        "Se déconnecter"
+                                        {move || t("dash.sign_out", lang.get())}
                                     </button>
                                 </div>
                             </div>
@@ -277,21 +284,21 @@ pub fn Dashboard(
                         <div class="modal-overlay">
                             <div class="modal-card">
                                 <div class="modal-header">
-                                    <h2>"Supprimer le Saladier"</h2>
+                                    <h2>{move || t("dash.delete_saladier", lang.get())}</h2>
                                     <p class="modal-subtitle">
-                                        "Voulez-vous vraiment supprimer « " {name_display} " » ? Cette action est irréversible."
+                                        {move || t("dash.delete_confirm_pre", lang.get())} {name_display.clone()} {move || t("dash.delete_confirm_post", lang.get())}
                                     </p>
                                 </div>
                                 <form class="auth-form" on:submit=handle_delete_submit>
                                     <div class="form-group">
-                                        <label>"Mot de passe du compte"</label>
+                                        <label>{move || t("dash.account_password", lang.get())}</label>
                                         <input
                                             type="password"
-                                            placeholder="Votre mot de passe maître"
+                                            placeholder=move || t("dash.master_pwd_placeholder", lang.get())
                                             required=true
                                             on:input=move |ev| set_delete_password.set(event_target_value(&ev))
                                         />
-                                        <span class="form-hint">"Entrez votre mot de passe maître pour confirmer la suppression."</span>
+                                        <span class="form-hint">{move || t("dash.delete_confirm_hint", lang.get())}</span>
                                     </div>
                                     {move || {
                                         let err = delete_error.get();
@@ -307,10 +314,10 @@ pub fn Dashboard(
                                             set_delete_password.set(String::new());
                                             set_delete_error.set(String::new());
                                         }>
-                                            "Annuler"
+                                            {move || t("cancel", lang.get())}
                                         </button>
                                         <button type="submit" class="btn btn-primary btn-danger" disabled=move || delete_loading.get()>
-                                            {move || if delete_loading.get() { "Suppression..." } else { "Supprimer" }}
+                                            {move || if delete_loading.get() { t("deleting", lang.get()) } else { t("delete", lang.get()) }}
                                         </button>
                                     </div>
                                 </form>
@@ -328,7 +335,7 @@ pub fn Dashboard(
                     <input
                         class="search-bar"
                         type="text"
-                        placeholder="Rechercher un Saladier... (Entrée pour déverrouiller)"
+                        placeholder=move || t("dash.search_placeholder", lang.get())
                         on:input=move |ev| {
                             set_search_query.set(event_target_value(&ev));
                             set_search_no_result.set(false);
@@ -338,9 +345,9 @@ pub fn Dashboard(
                     />
                     {move || {
                         if search_loading.get() {
-                            view! { <p class="search-no-result">"Recherche..."</p> }.into_any()
+                            view! { <p class="search-no-result">{move || t("dash.searching", lang.get())}</p> }.into_any()
                         } else if search_no_result.get() {
-                            view! { <p class="search-no-result">"Aucun résultat"</p> }.into_any()
+                            view! { <p class="search-no-result">{move || t("dash.no_results", lang.get())}</p> }.into_any()
                         } else {
                             view! { <div></div> }.into_any()
                         }
@@ -348,9 +355,9 @@ pub fn Dashboard(
                 </div>
 
                 <div class="section-header">
-                    <h2>"Mes Saladiers"</h2>
+                    <h2>{move || t("dash.my_saladiers", lang.get())}</h2>
                     <button class="btn btn-primary btn-lg" on:click=move |_| set_show_create.set(true)>
-                        "+ Nouveau Saladier"
+                        {move || t("dash.new_saladier", lang.get())}
                     </button>
                 </div>
 
@@ -360,23 +367,23 @@ pub fn Dashboard(
                             <div class="card create-card">
                                 <form on:submit=handle_create>
                                     <div class="form-group">
-                                        <label>"Nom du Saladier"</label>
+                                        <label>{move || t("dash.saladier_name", lang.get())}</label>
                                         <input
                                             type="text"
-                                            placeholder="ex: Personnel, Travail, Crypto..."
+                                            placeholder=move || t("dash.saladier_name_placeholder", lang.get())
                                             required=true
                                             on:input=move |ev| set_new_name.set(event_target_value(&ev))
                                         />
                                     </div>
                                     <div class="form-group">
-                                        <label>"Mot de passe du Saladier"</label>
+                                        <label>{move || t("dash.saladier_password", lang.get())}</label>
                                         <input
                                             type="password"
-                                            placeholder="Min. 16 caractères, maj, min, chiffre, spécial"
+                                            placeholder=move || t("register.password_placeholder", lang.get())
                                             required=true
                                             on:input=move |ev| set_new_password.set(event_target_value(&ev))
                                         />
-                                        <span class="form-hint">"Ce mot de passe protège ce Saladier même si le Potager est ouvert (Panic Mode). Min. 16 caractères avec majuscule, minuscule, chiffre et caractère spécial."</span>
+                                        <span class="form-hint">{move || t("dash.saladier_pwd_hint", lang.get())}</span>
                                     </div>
                                     <div class="form-group">
                                         <div class="checkbox-group">
@@ -388,9 +395,9 @@ pub fn Dashboard(
                                                     set_new_hidden.set(checked);
                                                 }
                                             />
-                                            <label for="hidden-checkbox">"Saladier secret (invisible dans la liste)"</label>
+                                            <label for="hidden-checkbox">{move || t("dash.hidden_checkbox", lang.get())}</label>
                                         </div>
-                                        <span class="form-hint">"Un Saladier secret n'apparaît nulle part. Pour y accéder, tapez son mot de passe dans la barre de recherche."</span>
+                                        <span class="form-hint">{move || t("dash.hidden_hint", lang.get())}</span>
                                     </div>
                                     {move || {
                                         let err = error_msg.get();
@@ -405,10 +412,10 @@ pub fn Dashboard(
                                             set_show_create.set(false);
                                             set_new_hidden.set(false);
                                         }>
-                                            "Annuler"
+                                            {move || t("cancel", lang.get())}
                                         </button>
                                         <button type="submit" class="btn btn-primary" disabled=move || loading.get()>
-                                            "Créer"
+                                            {move || t("create", lang.get())}
                                         </button>
                                     </div>
                                 </form>
@@ -458,7 +465,7 @@ pub fn Dashboard(
                                             set_delete_password.set(String::new());
                                         }
                                     >
-                                        "Supprimer"
+                                        {move || t("delete", lang.get())}
                                     </button>
                                 </div>
                             }
@@ -471,8 +478,8 @@ pub fn Dashboard(
                         view! {
                             <div class="empty-state">
                                 <p class="empty-icon">"🌿"</p>
-                                <p>"Aucun Saladier pour le moment."</p>
-                                <p class="empty-hint">"Créez votre premier Saladier pour commencer à stocker vos mots de passe."</p>
+                                <p>{move || t("dash.empty_title", lang.get())}</p>
+                                <p class="empty-hint">{move || t("dash.empty_hint", lang.get())}</p>
                             </div>
                         }.into_any()
                     } else {

@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
 use crate::components::settings::{PasswordType, Theme, UserSettings};
 
 /// Apply theme by setting data-theme attribute on <html>.
@@ -32,6 +33,7 @@ pub fn SettingsGeneral(
     set_settings: WriteSignal<UserSettings>,
     on_save: impl Fn() + Clone + Send + 'static,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let save = on_save.clone();
     let (preview_password, set_preview_password) = signal(String::new());
     let (gen_loading, set_gen_loading) = signal(false);
@@ -71,14 +73,14 @@ pub fn SettingsGeneral(
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"⚙️ Général & UX"</h2>
-            <p class="settings-section-desc">"Personnalisez votre expérience SaladVault."</p>
+            <h2 class="settings-section-title">{move || t("general.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("general.section_desc", lang.get())}</p>
 
             // Password generator defaults
             <div class="settings-group">
-                <h3>"Générateur de mots de passe"</h3>
+                <h3>{move || t("general.password_gen", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Longueur par défaut"</label>
+                    <label>{move || t("general.default_length", lang.get())}</label>
                     <div class="slider-container">
                         <input
                             type="range"
@@ -102,7 +104,7 @@ pub fn SettingsGeneral(
                 </div>
 
                 <div class="settings-row">
-                    <label>"Type de mot de passe"</label>
+                    <label>{move || t("general.password_type", lang.get())}</label>
                     <div class="settings-radio-group-inline">
                         <label class="settings-radio">
                             <input
@@ -119,7 +121,7 @@ pub fn SettingsGeneral(
                                     }
                                 }
                             />
-                            <span>"Alphanumérique"</span>
+                            <span>{move || t("general.alphanumeric", lang.get())}</span>
                         </label>
                         <label class="settings-radio">
                             <input
@@ -136,14 +138,14 @@ pub fn SettingsGeneral(
                                     }
                                 }
                             />
-                            <span>"Passphrase"</span>
+                            <span>{move || t("general.passphrase", lang.get())}</span>
                         </label>
                     </div>
                 </div>
 
                 <div class="settings-row">
                     <button class="btn btn-ghost btn-sm" on:click=generate_preview disabled=move || gen_loading.get()>
-                        {move || if gen_loading.get() { "Génération..." } else { "🎲 Générer un aperçu" }}
+                        {move || if gen_loading.get() { t("general.generating", lang.get()) } else { t("general.generate_preview", lang.get()) }}
                     </button>
                     {move || {
                         let pwd = preview_password.get();
@@ -160,7 +162,7 @@ pub fn SettingsGeneral(
 
             // Theme
             <div class="settings-group">
-                <h3>"Thème"</h3>
+                <h3>{move || t("general.theme", lang.get())}</h3>
                 <div class="settings-radio-group-inline">
                     <label class="settings-radio">
                         <input
@@ -178,7 +180,7 @@ pub fn SettingsGeneral(
                                 }
                             }
                         />
-                        <span>"🌙 Sombre"</span>
+                        <span>{move || t("general.theme_dark", lang.get())}</span>
                     </label>
                     <label class="settings-radio">
                         <input
@@ -196,18 +198,18 @@ pub fn SettingsGeneral(
                                 }
                             }
                         />
-                        <span>"☀️ Clair"</span>
+                        <span>{move || t("general.theme_light", lang.get())}</span>
                     </label>
                 </div>
             </div>
 
             // Dead Man's Switch
             <div class="settings-group dead-man-switch">
-                <h3>"💀 Dead Man's Switch"</h3>
-                <p class="settings-hint">"Si vous ne vous connectez pas pendant un certain temps, envoyez automatiquement le Kit de Secours à un contact de confiance."</p>
+                <h3>{move || t("general.deadman_title", lang.get())}</h3>
+                <p class="settings-hint">{move || t("general.deadman_desc", lang.get())}</p>
 
                 <div class="settings-row">
-                    <label>"Activer le Dead Man's Switch"</label>
+                    <label>{move || t("general.deadman_enable", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -228,7 +230,7 @@ pub fn SettingsGeneral(
                 {move || {
                     if !settings.get().dead_man_switch_enabled {
                         view! {
-                            <p class="settings-hint settings-hint-warn">"Désactivé — en cas d'incapacité prolongée, personne ne pourra accéder à vos données."</p>
+                            <p class="settings-hint settings-hint-warn">{move || t("general.deadman_disabled_warn", lang.get())}</p>
                         }.into_any()
                     } else {
                         view! { <div></div> }.into_any()
@@ -242,7 +244,7 @@ pub fn SettingsGeneral(
                         view! {
                             <div class="dead-man-details">
                                 <div class="settings-row">
-                                    <label>"Délai d'inactivité (jours)"</label>
+                                    <label>{move || t("general.deadman_days", lang.get())}</label>
                                     <input
                                         type="number"
                                         class="settings-input-sm"
@@ -260,7 +262,7 @@ pub fn SettingsGeneral(
                                     />
                                 </div>
                                 <div class="settings-row">
-                                    <label>"Email du contact de confiance"</label>
+                                    <label>{move || t("general.deadman_email", lang.get())}</label>
                                     <input
                                         type="email"
                                         class="settings-input"
@@ -278,19 +280,19 @@ pub fn SettingsGeneral(
                                 </div>
                                 // Recovery Kit section
                                 <div class="settings-subgroup">
-                                    <h4>"📦 Kit de Secours"</h4>
-                                    <p class="settings-hint">"Générez un kit chiffré contenant toutes vos données. Il sera envoyé à votre contact de confiance si le Dead Man's Switch se déclenche."</p>
+                                    <h4>{move || t("general.recovery_kit_title", lang.get())}</h4>
+                                    <p class="settings-hint">{move || t("general.recovery_kit_desc", lang.get())}</p>
                                     <div class="settings-row">
-                                        <label>"Mot de passe du kit"</label>
+                                        <label>{move || t("general.kit_password", lang.get())}</label>
                                         <input
                                             type="password"
                                             class="settings-input"
-                                            placeholder="Min. 8 caractères"
+                                            placeholder=move || t("general.kit_password_placeholder", lang.get())
                                             prop:value=move || recovery_password.get()
                                             on:input=move |ev| set_recovery_password.set(event_target_value(&ev))
                                         />
                                     </div>
-                                    <p class="settings-hint">"Communiquez ce mot de passe à votre contact par un canal séparé (en personne, courrier scellé, etc.)."</p>
+                                    <p class="settings-hint">{move || t("general.kit_password_hint", lang.get())}</p>
                                     <button
                                         class="btn btn-primary btn-sm"
                                         disabled=move || recovery_loading.get() || recovery_password.get().len() < 8
@@ -332,18 +334,18 @@ pub fn SettingsGeneral(
                                                             }).unwrap();
                                                             match invoke("deadman_update_config", upload_args).await {
                                                                 Ok(_) => {
-                                                                    set_recovery_msg.set("Kit de secours généré et envoyé au serveur".to_string());
+                                                                    set_recovery_msg.set(t("general.kit_sent_success", lang.get()).to_string());
                                                                 }
                                                                 Err(e) => {
                                                                     set_recovery_error.set(
-                                                                        e.as_string().unwrap_or_else(|| "Erreur lors de l'envoi au serveur".to_string())
+                                                                        e.as_string().unwrap_or_else(|| t("general.kit_send_error", lang.get()).to_string())
                                                                     );
                                                                 }
                                                             }
                                                         }
                                                         Err(e) => {
                                                             set_recovery_error.set(
-                                                                e.as_string().unwrap_or_else(|| "Erreur lors de la génération".to_string())
+                                                                e.as_string().unwrap_or_else(|| t("general.kit_gen_error", lang.get()).to_string())
                                                             );
                                                         }
                                                     }
@@ -352,7 +354,7 @@ pub fn SettingsGeneral(
                                             }
                                         }
                                     >
-                                        {move || if recovery_loading.get() { "Génération..." } else { "🔐 Générer et envoyer le kit" }}
+                                        {move || if recovery_loading.get() { t("general.generating", lang.get()) } else { t("general.generate_send_kit", lang.get()) }}
                                     </button>
                                     {move || {
                                         let msg = recovery_msg.get();
@@ -369,7 +371,7 @@ pub fn SettingsGeneral(
 
                                 <div class="settings-note">
                                     <span class="note-icon">"ℹ️"</span>
-                                    <p>"Les paramètres sont sauvegardés localement et synchronisés avec le serveur si vous êtes connecté (onglet Sync)."</p>
+                                    <p>{move || t("general.settings_sync_note", lang.get())}</p>
                                 </div>
                             </div>
                         }.into_any()

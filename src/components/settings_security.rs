@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
 use crate::components::settings::{AutoLockTimeout, UserSettings};
 
 #[wasm_bindgen]
@@ -17,18 +18,19 @@ pub fn SettingsSecurity(
     set_settings: WriteSignal<UserSettings>,
     on_save: impl Fn() + Clone + Send + 'static,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let save = on_save.clone();
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"🛡️ Sécurité & Verrouillage"</h2>
-            <p class="settings-section-desc">"Configurez le comportement défensif de l'application."</p>
+            <h2 class="settings-section-title">{move || t("sec.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("sec.section_desc", lang.get())}</p>
 
             // Auto-Lock Timeout
             <div class="settings-group">
-                <h3>"Verrouillage automatique"</h3>
+                <h3>{move || t("sec.auto_lock", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Délai de verrouillage"</label>
+                    <label>{move || t("sec.auto_lock_timeout", lang.get())}</label>
                     <select
                         class="settings-select"
                         on:change={
@@ -47,15 +49,15 @@ pub fn SettingsSecurity(
                             }
                         }
                     >
-                        <option value="immediate" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::Immediate>"Immédiatement"</option>
-                        <option value="1min" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::After1Min>"Après 1 minute"</option>
-                        <option value="5min" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::After5Min>"Après 5 minutes"</option>
-                        <option value="never" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::Never>"Jamais"</option>
+                        <option value="immediate" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::Immediate>{move || t("sec.immediate", lang.get())}</option>
+                        <option value="1min" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::After1Min>{move || t("sec.after_1min", lang.get())}</option>
+                        <option value="5min" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::After5Min>{move || t("sec.after_5min", lang.get())}</option>
+                        <option value="never" selected=move || settings.get().auto_lock_timeout == AutoLockTimeout::Never>{move || t("sec.never", lang.get())}</option>
                     </select>
                 </div>
 
                 <div class="settings-row">
-                    <label>"À la mise en veille du système"</label>
+                    <label>{move || t("sec.lock_on_sleep", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -74,7 +76,7 @@ pub fn SettingsSecurity(
                 </div>
 
                 <div class="settings-row">
-                    <label>"À la fermeture de la fenêtre"</label>
+                    <label>{move || t("sec.lock_on_close", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -93,7 +95,7 @@ pub fn SettingsSecurity(
                 </div>
 
                 <div class="settings-row">
-                    <label>"En cas d'inactivité"</label>
+                    <label>{move || t("sec.lock_on_inactivity", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -114,9 +116,9 @@ pub fn SettingsSecurity(
 
             // Clipboard
             <div class="settings-group">
-                <h3>"Presse-papiers"</h3>
+                <h3>{move || t("sec.clipboard_title", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Vider le presse-papiers après (secondes)"</label>
+                    <label>{move || t("sec.clipboard_clear", lang.get())}</label>
                     <input
                         type="number"
                         class="settings-input-sm"
@@ -139,9 +141,9 @@ pub fn SettingsSecurity(
 
             // Screenshot protection
             <div class="settings-group">
-                <h3>"Protection contre les captures d'écran"</h3>
+                <h3>{move || t("sec.screenshot", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Bloquer les captures d'écran de l'application"</label>
+                    <label>{move || t("sec.screenshot_block", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -165,11 +167,11 @@ pub fn SettingsSecurity(
                         }
                     />
                 </div>
-                <p class="settings-hint">"Empêche les applications de capture d'écran de voir le contenu de SaladVault."</p>
+                <p class="settings-hint">{move || t("sec.screenshot_hint", lang.get())}</p>
                 {move || {
                     if !settings.get().screenshot_protection {
                         view! {
-                            <p class="settings-hint settings-hint-warn">"La protection est désactivée — vos données sont visibles par les outils de capture d'écran."</p>
+                            <p class="settings-hint settings-hint-warn">{move || t("sec.screenshot_warn", lang.get())}</p>
                         }.into_any()
                     } else {
                         view! { <div></div> }.into_any()

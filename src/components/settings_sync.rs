@@ -3,6 +3,8 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -67,6 +69,7 @@ enum MfaPhase {
 
 #[component]
 pub fn SettingsSync() -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (connected, set_connected) = signal(false);
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
@@ -128,7 +131,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Erreur de connexion".to_string()),
+                            .unwrap_or_else(|| t("sync.connection_error", lang.get()).to_string()),
                     );
                 }
             }
@@ -153,7 +156,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Ok(_) => {
                     set_connected.set(true);
                     set_mfa_phase.set(MfaPhase::None);
-                    set_success_msg.set("Connecté au serveur".to_string());
+                    set_success_msg.set(t("sync.connected", lang.get()).to_string());
                     set_password.set(String::new());
                     set_totp_code.set(String::new());
                     load_sync_status(set_sync_version, set_sync_updated).await;
@@ -161,7 +164,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Code MFA invalide".to_string()),
+                            .unwrap_or_else(|| t("sync.invalid_mfa", lang.get()).to_string()),
                     );
                 }
             }
@@ -198,7 +201,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Erreur lors de l'inscription".to_string()),
+                            .unwrap_or_else(|| t("sync.register_error", lang.get()).to_string()),
                     );
                 }
             }
@@ -223,7 +226,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Ok(_) => {
                     set_connected.set(true);
                     set_mfa_phase.set(MfaPhase::None);
-                    set_success_msg.set("Compte serveur créé et connecté".to_string());
+                    set_success_msg.set(t("sync.account_created", lang.get()).to_string());
                     set_password.set(String::new());
                     set_totp_code.set(String::new());
                     set_show_register.set(false);
@@ -231,7 +234,7 @@ pub fn SettingsSync() -> impl IntoView {
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Code MFA invalide".to_string()),
+                            .unwrap_or_else(|| t("sync.invalid_mfa", lang.get()).to_string()),
                     );
                 }
             }
@@ -244,7 +247,7 @@ pub fn SettingsSync() -> impl IntoView {
             let args = serde_wasm_bindgen::to_value(&()).unwrap();
             let _ = invoke("server_logout", args).await;
             set_connected.set(false);
-            set_success_msg.set("Déconnecté du serveur".to_string());
+            set_success_msg.set(t("sync.disconnected", lang.get()).to_string());
         });
     };
 
@@ -260,12 +263,12 @@ pub fn SettingsSync() -> impl IntoView {
                         set_sync_version.set(status.version);
                         set_sync_updated.set(status.updated_at);
                     }
-                    set_success_msg.set("Données envoyées au serveur".to_string());
+                    set_success_msg.set(t("sync.push_success", lang.get()).to_string());
                 }
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Erreur de synchronisation".to_string()),
+                            .unwrap_or_else(|| t("sync.sync_error", lang.get()).to_string()),
                     );
                 }
             }
@@ -285,12 +288,12 @@ pub fn SettingsSync() -> impl IntoView {
                         set_sync_version.set(status.version);
                         set_sync_updated.set(status.updated_at);
                     }
-                    set_success_msg.set("Données récupérées depuis le serveur".to_string());
+                    set_success_msg.set(t("sync.pull_success", lang.get()).to_string());
                 }
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| "Erreur de synchronisation".to_string()),
+                            .unwrap_or_else(|| t("sync.sync_error", lang.get()).to_string()),
                     );
                 }
             }
@@ -306,8 +309,8 @@ pub fn SettingsSync() -> impl IntoView {
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"☁️ Synchronisation Cloud"</h2>
-            <p class="settings-section-desc">"Synchronisez vos coffres chiffrés entre appareils via le serveur SaladVault."</p>
+            <h2 class="settings-section-title">{move || t("sync.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("sync.section_desc", lang.get())}</p>
 
             // Messages
             {move || {
@@ -327,20 +330,20 @@ pub fn SettingsSync() -> impl IntoView {
                     // Connected state
                     view! {
                         <div class="settings-group">
-                            <h3>"Statut"</h3>
+                            <h3>{move || t("sync.status", lang.get())}</h3>
                             <div class="settings-row">
-                                <label>"Connexion"</label>
-                                <span class="badge badge-success">"Connecté"</span>
+                                <label>{move || t("sync.connection", lang.get())}</label>
+                                <span class="badge badge-success">{move || t("sync.connected_badge", lang.get())}</span>
                             </div>
                             <div class="settings-row">
-                                <label>"Version serveur"</label>
+                                <label>{move || t("sync.server_version", lang.get())}</label>
                                 <span>{move || sync_version.get().to_string()}</span>
                             </div>
                             <div class="settings-row">
-                                <label>"Dernière sync"</label>
+                                <label>{move || t("sync.last_sync", lang.get())}</label>
                                 <span>{move || {
                                     let u = sync_updated.get();
-                                    if u.is_empty() { "Jamais".to_string() } else { u }
+                                    if u.is_empty() { t("sec.never", lang.get()).to_string() } else { u }
                                 }}</span>
                             </div>
                             <div class="import-buttons">
@@ -349,21 +352,21 @@ pub fn SettingsSync() -> impl IntoView {
                                     on:click=handle_push
                                     disabled=move || loading.get()
                                 >
-                                    {move || if loading.get() { "Envoi..." } else { "📤 Envoyer au serveur" }}
+                                    {move || if loading.get() { t("sync.sending", lang.get()) } else { t("sync.push", lang.get()) }}
                                 </button>
                                 <button
                                     class="btn btn-ghost btn-sm"
                                     on:click=handle_pull
                                     disabled=move || loading.get()
                                 >
-                                    {move || if loading.get() { "Réception..." } else { "📥 Récupérer du serveur" }}
+                                    {move || if loading.get() { t("sync.receiving", lang.get()) } else { t("sync.pull", lang.get()) }}
                                 </button>
                             </div>
-                            <p class="settings-hint settings-hint-warn">"⚠️ « Récupérer du serveur » remplace toutes les données locales par celles du serveur."</p>
+                            <p class="settings-hint settings-hint-warn">{move || t("sync.pull_warning", lang.get())}</p>
                         </div>
                         <div class="settings-group">
                             <button class="btn btn-ghost btn-danger btn-sm" on:click=handle_logout>
-                                "Se déconnecter du serveur"
+                                {move || t("sync.logout", lang.get())}
                             </button>
                         </div>
                     }.into_any()
@@ -371,15 +374,15 @@ pub fn SettingsSync() -> impl IntoView {
                     // MFA Setup phase (registration step 2)
                     view! {
                         <div class="settings-group">
-                            <h3>"Configuration MFA"</h3>
-                            <p class="settings-hint">"Scannez le QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)"</p>
+                            <h3>{move || t("sync.mfa_setup_title", lang.get())}</h3>
+                            <p class="settings-hint">{move || t("sync.mfa_setup_hint", lang.get())}</p>
                             <div class="mfa-qr-container" inner_html=move || mfa_qr_svg.get()></div>
                             <div class="settings-row">
-                                <label>"Clé manuelle"</label>
+                                <label>{move || t("sync.manual_key", lang.get())}</label>
                                 <code class="mfa-secret-code">{move || mfa_secret_b32.get()}</code>
                             </div>
                             <div class="settings-row">
-                                <label>"Code de vérification"</label>
+                                <label>{move || t("sync.verification_code", lang.get())}</label>
                                 <input
                                     type="text"
                                     class="settings-input mfa-code-input"
@@ -397,13 +400,13 @@ pub fn SettingsSync() -> impl IntoView {
                                     on:click=handle_mfa_confirm
                                     disabled=move || loading.get() || totp_code.get().len() != 6
                                 >
-                                    {move || if loading.get() { "Vérification..." } else { "Confirmer le code" }}
+                                    {move || if loading.get() { t("sync.verifying", lang.get()) } else { t("sync.confirm_code", lang.get()) }}
                                 </button>
                                 <button
                                     class="btn btn-ghost btn-sm"
                                     on:click=handle_cancel_mfa
                                 >
-                                    "Annuler"
+                                    {move || t("cancel", lang.get())}
                                 </button>
                             </div>
                         </div>
@@ -412,10 +415,10 @@ pub fn SettingsSync() -> impl IntoView {
                     // MFA Challenge phase (login step 2)
                     view! {
                         <div class="settings-group">
-                            <h3>"Vérification MFA"</h3>
-                            <p class="settings-hint">"Entrez le code depuis votre application d'authentification."</p>
+                            <h3>{move || t("sync.mfa_verify_title", lang.get())}</h3>
+                            <p class="settings-hint">{move || t("sync.mfa_verify_hint", lang.get())}</p>
                             <div class="settings-row">
-                                <label>"Code TOTP"</label>
+                                <label>{move || t("sync.mfa_code", lang.get())}</label>
                                 <input
                                     type="text"
                                     class="settings-input mfa-code-input"
@@ -433,13 +436,13 @@ pub fn SettingsSync() -> impl IntoView {
                                     on:click=handle_mfa_verify
                                     disabled=move || loading.get() || totp_code.get().len() != 6
                                 >
-                                    {move || if loading.get() { "Vérification..." } else { "Vérifier" }}
+                                    {move || if loading.get() { t("sync.verifying", lang.get()) } else { t("sync.verify", lang.get()) }}
                                 </button>
                                 <button
                                     class="btn btn-ghost btn-sm"
                                     on:click=handle_cancel_mfa
                                 >
-                                    "Annuler"
+                                    {move || t("cancel", lang.get())}
                                 </button>
                             </div>
                         </div>
@@ -448,9 +451,9 @@ pub fn SettingsSync() -> impl IntoView {
                     // Disconnected state — login/register form
                     view! {
                         <div class="settings-group">
-                            <h3>"Connexion au serveur"</h3>
+                            <h3>{move || t("sync.login_title", lang.get())}</h3>
                             <div class="settings-row">
-                                <label>"URL du serveur"</label>
+                                <label>{move || t("sync.server_url", lang.get())}</label>
                                 <input
                                     type="url"
                                     class="settings-input"
@@ -460,7 +463,7 @@ pub fn SettingsSync() -> impl IntoView {
                                 />
                             </div>
                             <div class="settings-row">
-                                <label>"Email"</label>
+                                <label>{move || t("email", lang.get())}</label>
                                 <input
                                     type="email"
                                     class="settings-input"
@@ -470,42 +473,42 @@ pub fn SettingsSync() -> impl IntoView {
                                 />
                             </div>
                             <div class="settings-row">
-                                <label>"Mot de passe serveur"</label>
+                                <label>{move || t("sync.server_password", lang.get())}</label>
                                 <input
                                     type="password"
                                     class="settings-input"
-                                    placeholder="Mot de passe du compte serveur"
+                                    placeholder=move || t("sync.server_password_placeholder", lang.get())
                                     prop:value=move || password.get()
                                     on:input=move |ev| set_password.set(event_target_value(&ev))
                                 />
                             </div>
-                            <p class="settings-hint">"Ce mot de passe est différent de votre mot de passe maître. Il sert uniquement à l'authentification serveur."</p>
+                            <p class="settings-hint">{move || t("sync.password_hint", lang.get())}</p>
                             <div class="import-buttons">
                                 <button
                                     class="btn btn-primary btn-sm"
                                     on:click=handle_login
                                     disabled=move || loading.get()
                                 >
-                                    {move || if loading.get() { "Connexion..." } else { "Se connecter" }}
+                                    {move || if loading.get() { t("sync.connecting", lang.get()) } else { t("sync.login", lang.get()) }}
                                 </button>
                                 <button
                                     class="btn btn-ghost btn-sm"
                                     on:click=move |_| set_show_register.set(!show_register.get_untracked())
                                 >
-                                    "Créer un compte"
+                                    {move || t("sync.create_account", lang.get())}
                                 </button>
                             </div>
                             {move || {
                                 if show_register.get() {
                                     view! {
                                         <div class="settings-note">
-                                            <p>"Créer un nouveau compte sur ce serveur avec les identifiants ci-dessus."</p>
+                                            <p>{move || t("sync.create_account_hint", lang.get())}</p>
                                             <button
                                                 class="btn btn-primary btn-sm"
                                                 on:click=handle_register
                                                 disabled=move || loading.get()
                                             >
-                                                {move || if loading.get() { "Inscription..." } else { "Créer le compte" }}
+                                                {move || if loading.get() { t("sync.registering", lang.get()) } else { t("sync.register", lang.get()) }}
                                             </button>
                                         </div>
                                     }.into_any()

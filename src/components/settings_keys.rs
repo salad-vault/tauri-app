@@ -3,6 +3,8 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -20,6 +22,8 @@ struct VerifyPasswordArgs {
 
 #[component]
 pub fn SettingsKeys() -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
+
     let (key_path, set_key_path) = signal(String::new());
     let (show_kit, set_show_kit) = signal(false);
     let (kit_password, set_kit_password) = signal(String::new());
@@ -73,14 +77,14 @@ pub fn SettingsKeys() -> impl IntoView {
                         if let Ok(words) = serde_wasm_bindgen::from_value::<Vec<String>>(phrase_result) {
                             set_kit_phrase.set(words);
                         } else {
-                            set_kit_error.set("Erreur lors de la génération de la phrase.".to_string());
+                            set_kit_error.set(t("keys.error_generating_phrase", lang.get()).to_string());
                         }
                     } else {
-                        set_kit_error.set("Erreur lors de la génération de la phrase.".to_string());
+                        set_kit_error.set(t("keys.error_generating_phrase", lang.get()).to_string());
                     }
                 }
                 Err(_) => {
-                    set_kit_error.set("Mot de passe incorrect.".to_string());
+                    set_kit_error.set(t("keys.wrong_password", lang.get()).to_string());
                 }
             }
             set_kit_loading.set(false);
@@ -97,7 +101,7 @@ pub fn SettingsKeys() -> impl IntoView {
         let new = new_pwd.get_untracked();
 
         // Validate new password
-        if let Err(msg) = crate::components::password_utils::validate_password(&new) {
+        if let Err(msg) = crate::components::password_utils::validate_password(&new, lang.get_untracked()) {
             set_change_pwd_error.set(msg);
             set_change_pwd_loading.set(false);
             return;
@@ -125,7 +129,7 @@ pub fn SettingsKeys() -> impl IntoView {
                     set_new_pwd.set(String::new());
                 }
                 Err(_) => {
-                    set_change_pwd_error.set("Mot de passe actuel incorrect.".to_string());
+                    set_change_pwd_error.set(t("keys.wrong_current_password", lang.get()).to_string());
                 }
             }
         });
@@ -156,7 +160,7 @@ pub fn SettingsKeys() -> impl IntoView {
                     set_regen_pwd.set(String::new());
                 }
                 Err(_) => {
-                    set_regen_error.set("Mot de passe incorrect.".to_string());
+                    set_regen_error.set(t("keys.wrong_password", lang.get()).to_string());
                 }
             }
         });
@@ -170,7 +174,7 @@ pub fn SettingsKeys() -> impl IntoView {
             // Open a save dialog to choose the new location
             let opts = js_sys::Object::new();
             js_sys::Reflect::set(&opts, &"defaultPath".into(), &"device_secret.key".into()).unwrap();
-            js_sys::Reflect::set(&opts, &"title".into(), &"Choisir l'emplacement de la clé".into()).unwrap();
+            js_sys::Reflect::set(&opts, &"title".into(), &t("keys.choose_key_location", lang.get()).into()).unwrap();
 
             match save(opts.into()).await {
                 Ok(path_val) => {
@@ -191,7 +195,7 @@ pub fn SettingsKeys() -> impl IntoView {
                                 }
                             }
                             Err(err) => {
-                                let msg = err.as_string().unwrap_or_else(|| "Erreur lors du déplacement".to_string());
+                                let msg = err.as_string().unwrap_or_else(|| t("keys.move_error", lang.get()).to_string());
                                 set_move_error.set(msg);
                             }
                         }
@@ -207,18 +211,18 @@ pub fn SettingsKeys() -> impl IntoView {
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"🔑 Gestion des Clés"</h2>
-            <p class="settings-section-desc">"Gérez votre clé locale et vos identifiants de sécurité."</p>
+            <h2 class="settings-section-title">{move || t("keys.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("keys.section_desc", lang.get())}</p>
 
             // Device key path
             <div class="settings-group">
-                <h3>"Emplacement de la clé locale"</h3>
+                <h3>{move || t("keys.local_key_path", lang.get())}</h3>
                 <div class="key-path-display">
                     <code class="key-path-text">{move || key_path.get()}</code>
                 </div>
                 <div class="settings-actions">
                     <button class="btn btn-ghost btn-sm" on:click=handle_move_key>
-                        "📂 Déplacer la clé"
+                        {move || t("keys.move_key", lang.get())}
                     </button>
                 </div>
                 {move || {
@@ -229,13 +233,13 @@ pub fn SettingsKeys() -> impl IntoView {
                         view! { <div class="error-msg">{err}</div> }.into_any()
                     }
                 }}
-                <p class="settings-hint">"Déplacez la clé sur une clé USB pour une sécurité maximale (Cold Storage)."</p>
+                <p class="settings-hint">{move || t("keys.move_hint", lang.get())}</p>
             </div>
 
             // Emergency Kit
             <div class="settings-group">
-                <h3>"Kit de Secours"</h3>
-                <p class="settings-hint">"Affichez votre phrase de récupération BIP39. Nécessite votre mot de passe maître."</p>
+                <h3>{move || t("keys.emergency_kit", lang.get())}</h3>
+                <p class="settings-hint">{move || t("keys.emergency_kit_hint", lang.get())}</p>
                 {move || {
                     if !kit_phrase.get().is_empty() {
                         let words = kit_phrase.get();
@@ -257,17 +261,17 @@ pub fn SettingsKeys() -> impl IntoView {
                                 set_kit_password.set(String::new());
                                 set_show_kit.set(false);
                             }>
-                                "Masquer"
+                                {move || t("hide", lang.get())}
                             </button>
                         }.into_any()
                     } else if show_kit.get() {
                         view! {
                             <form class="auth-form" on:submit=handle_kit_verify>
                                 <div class="form-group">
-                                    <label>"Mot de passe maître"</label>
+                                    <label>{move || t("master_password", lang.get())}</label>
                                     <input
                                         type="password"
-                                        placeholder="Entrez votre mot de passe maître"
+                                        placeholder=move || t("keys.enter_master_password", lang.get())
                                         required=true
                                         on:input=move |ev| set_kit_password.set(event_target_value(&ev))
                                     />
@@ -282,10 +286,10 @@ pub fn SettingsKeys() -> impl IntoView {
                                 }}
                                 <div class="form-actions">
                                     <button type="button" class="btn btn-ghost" on:click=move |_| set_show_kit.set(false)>
-                                        "Annuler"
+                                        {move || t("cancel", lang.get())}
                                     </button>
                                     <button type="submit" class="btn btn-primary" disabled=move || kit_loading.get()>
-                                        {move || if kit_loading.get() { "Vérification..." } else { "Afficher" }}
+                                        {move || if kit_loading.get() { t("keys.verifying", lang.get()) } else { t("keys.show", lang.get()) }}
                                     </button>
                                 </div>
                             </form>
@@ -293,7 +297,7 @@ pub fn SettingsKeys() -> impl IntoView {
                     } else {
                         view! {
                             <button class="btn btn-primary btn-danger" on:click=move |_| set_show_kit.set(true)>
-                                "🔐 Afficher le Kit de Secours"
+                                {move || t("keys.show_emergency_kit", lang.get())}
                             </button>
                         }.into_any()
                     }
@@ -302,19 +306,19 @@ pub fn SettingsKeys() -> impl IntoView {
 
             // Danger Zone
             <div class="settings-group danger-zone">
-                <h3>"⚠️ Zone Dangereuse"</h3>
+                <h3>{move || t("keys.danger_zone", lang.get())}</h3>
 
                 // Change master password
                 {move || {
                     if change_pwd_success.get() {
                         view! {
-                            <div class="info-msg">"Mot de passe maître changé avec succès !"</div>
+                            <div class="info-msg">{move || t("keys.password_changed_success", lang.get())}</div>
                         }.into_any()
                     } else if show_change_pwd.get() {
                         view! {
                             <form class="auth-form" on:submit=handle_change_pwd>
                                 <div class="form-group">
-                                    <label>"Mot de passe actuel"</label>
+                                    <label>{move || t("keys.current_password", lang.get())}</label>
                                     <input
                                         type="password"
                                         required=true
@@ -322,10 +326,10 @@ pub fn SettingsKeys() -> impl IntoView {
                                     />
                                 </div>
                                 <div class="form-group">
-                                    <label>"Nouveau mot de passe"</label>
+                                    <label>{move || t("keys.new_password", lang.get())}</label>
                                     <input
                                         type="password"
-                                        placeholder="Min. 16 caractères"
+                                        placeholder=move || t("keys.new_password_placeholder", lang.get())
                                         required=true
                                         on:input=move |ev| set_new_pwd.set(event_target_value(&ev))
                                     />
@@ -340,10 +344,10 @@ pub fn SettingsKeys() -> impl IntoView {
                                 }}
                                 <div class="form-actions">
                                     <button type="button" class="btn btn-ghost" on:click=move |_| set_show_change_pwd.set(false)>
-                                        "Annuler"
+                                        {move || t("cancel", lang.get())}
                                     </button>
                                     <button type="submit" class="btn btn-primary btn-danger" disabled=move || change_pwd_loading.get()>
-                                        {move || if change_pwd_loading.get() { "Changement..." } else { "Changer" }}
+                                        {move || if change_pwd_loading.get() { t("keys.changing", lang.get()) } else { t("keys.change_btn", lang.get()) }}
                                     </button>
                                 </div>
                             </form>
@@ -351,7 +355,7 @@ pub fn SettingsKeys() -> impl IntoView {
                     } else {
                         view! {
                             <button class="btn btn-ghost btn-danger" on:click=move |_| set_show_change_pwd.set(true)>
-                                "Changer le Mot de Passe Maître"
+                                {move || t("keys.change_password", lang.get())}
                             </button>
                         }.into_any()
                     }
@@ -363,15 +367,15 @@ pub fn SettingsKeys() -> impl IntoView {
                 {move || {
                     if regen_success.get() {
                         view! {
-                            <div class="info-msg">"Clé locale régénérée. Veuillez sauvegarder votre nouveau Kit de Secours."</div>
+                            <div class="info-msg">{move || t("keys.regen_success", lang.get())}</div>
                         }.into_any()
                     } else if show_regen.get() {
                         view! {
                             <div>
-                                <div class="warning-text">"⚠️ Attention : Régénérer la clé locale nécessite une re-synchronisation de tous les autres appareils."</div>
+                                <div class="warning-text">{move || t("keys.regen_warning", lang.get())}</div>
                                 <form class="auth-form" style="margin-top: 1rem;" on:submit=handle_regen_key>
                                     <div class="form-group">
-                                        <label>"Mot de passe maître"</label>
+                                        <label>{move || t("master_password", lang.get())}</label>
                                         <input
                                             type="password"
                                             required=true
@@ -388,10 +392,10 @@ pub fn SettingsKeys() -> impl IntoView {
                                     }}
                                     <div class="form-actions">
                                         <button type="button" class="btn btn-ghost" on:click=move |_| set_show_regen.set(false)>
-                                            "Annuler"
+                                            {move || t("cancel", lang.get())}
                                         </button>
                                         <button type="submit" class="btn btn-primary btn-danger" disabled=move || regen_loading.get()>
-                                            {move || if regen_loading.get() { "Régénération..." } else { "Régénérer" }}
+                                            {move || if regen_loading.get() { t("keys.regenerating", lang.get()) } else { t("keys.regenerate", lang.get()) }}
                                         </button>
                                     </div>
                                 </form>
@@ -400,7 +404,7 @@ pub fn SettingsKeys() -> impl IntoView {
                     } else {
                         view! {
                             <button class="btn btn-ghost btn-danger" on:click=move |_| set_show_regen.set(true)>
-                                "Régénérer la Clé Locale"
+                                {move || t("keys.regenerate_local_key", lang.get())}
                             </button>
                         }.into_any()
                     }

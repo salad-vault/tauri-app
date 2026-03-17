@@ -2,6 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -10,6 +12,7 @@ extern "C" {
 
 #[component]
 pub fn SettingsDevices() -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (qr_data, set_qr_data) = signal(String::new());
     let (loading, set_loading) = signal(false);
 
@@ -28,12 +31,12 @@ pub fn SettingsDevices() -> impl IntoView {
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"📱 Appareils & Synchronisation"</h2>
-            <p class="settings-section-desc">"Gérez le lien entre vos appareils."</p>
+            <h2 class="settings-section-title">{move || t("devices.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("devices.section_desc", lang.get())}</p>
 
             <div class="settings-group">
-                <h3>"Appairer un nouvel appareil"</h3>
-                <p class="settings-hint">"Générez un QR code contenant votre clé de périphérique pour la transférer vers un autre appareil."</p>
+                <h3>{move || t("devices.pair_new", lang.get())}</h3>
+                <p class="settings-hint">{move || t("devices.pair_hint", lang.get())}</p>
 
                 {move || {
                     let data = qr_data.get();
@@ -41,16 +44,16 @@ pub fn SettingsDevices() -> impl IntoView {
                         view! {
                             <div class="qr-display">
                                 <div class="qr-code-svg" inner_html=data.clone()></div>
-                                <p class="settings-hint">"Scannez ce code avec l'application mobile SaladVault pour transférer votre clé."</p>
+                                <p class="settings-hint">{move || t("devices.scan_hint", lang.get())}</p>
                                 <button class="btn btn-ghost btn-sm" on:click=move |_| set_qr_data.set(String::new())>
-                                    "Masquer"
+                                    {move || t("hide", lang.get())}
                                 </button>
                             </div>
                         }.into_any()
                     } else {
                         view! {
                             <button class="btn btn-primary" on:click=generate_qr disabled=move || loading.get()>
-                                {move || if loading.get() { "Génération..." } else { "📷 Générer le QR Code" }}
+                                {move || if loading.get() { t("devices.generating", lang.get()) } else { t("devices.generate_qr", lang.get()) }}
                             </button>
                         }.into_any()
                     }
@@ -58,10 +61,10 @@ pub fn SettingsDevices() -> impl IntoView {
             </div>
 
             <div class="settings-group">
-                <h3>"Appareils connectés"</h3>
+                <h3>{move || t("devices.connected_devices", lang.get())}</h3>
                 <div class="settings-note">
                     <span class="note-icon">"ℹ️"</span>
-                    <p>"La synchronisation entre appareils et la révocation des sessions seront disponibles dans une prochaine version avec le serveur de synchronisation."</p>
+                    <p>{move || t("devices.sync_coming_soon", lang.get())}</p>
                 </div>
             </div>
         </div>

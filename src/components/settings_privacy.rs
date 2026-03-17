@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::i18n::{t, Language};
 use crate::components::settings::UserSettings;
 
 #[component]
@@ -8,17 +9,18 @@ pub fn SettingsPrivacy(
     set_settings: WriteSignal<UserSettings>,
     on_save: impl Fn() + Clone + Send + 'static,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let save = on_save.clone();
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"🌐 Vie Privée & Réseau"</h2>
-            <p class="settings-section-desc">"Contrôlez les fuites de métadonnées et les communications réseau."</p>
+            <h2 class="settings-section-title">{move || t("privacy.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("privacy.section_desc", lang.get())}</p>
 
             <div class="settings-group">
-                <h3>"Rapports de crash"</h3>
+                <h3>{move || t("privacy.crash_reports_title", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Envoyer des rapports d'erreurs anonymes"</label>
+                    <label>{move || t("privacy.crash_reports", lang.get())}</label>
                     <input
                         type="checkbox"
                         class="settings-toggle"
@@ -35,7 +37,7 @@ pub fn SettingsPrivacy(
                         }
                     />
                 </div>
-                <p class="settings-hint">"Opt-in uniquement. Aucune donnée personnelle n'est incluse dans les rapports."</p>
+                <p class="settings-hint">{move || t("privacy.crash_reports_hint", lang.get())}</p>
             </div>
         </div>
     }

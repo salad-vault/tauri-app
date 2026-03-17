@@ -3,6 +3,8 @@ use leptos::{ev::SubmitEvent, prelude::*};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -18,6 +20,7 @@ struct RecoverArgs {
 pub fn Recovery(
     on_close: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (phrase, set_phrase) = signal(String::new());
     let (recovery_input, set_recovery_input) = signal(String::new());
     let (show_recover, set_show_recover) = signal(false);
@@ -37,7 +40,7 @@ pub fn Recovery(
                         if p.contains(' ') {
                             set_phrase.set(p);
                         } else {
-                            set_message.set("Erreur lors de la génération de la phrase.".to_string());
+                            set_message.set(t("recovery.error_generating", lang.get()).to_string());
                         }
                     }
                 }
@@ -65,10 +68,10 @@ pub fn Recovery(
 
             match result {
                 Ok(_) => {
-                    set_message.set("Clé de périphérique restaurée avec succès !".to_string());
+                    set_message.set(t("recovery.restored_ok", lang.get()).to_string());
                 }
                 Err(_) => {
-                    set_message.set("Phrase de récupération invalide.".to_string());
+                    set_message.set(t("recovery.invalid_phrase", lang.get()).to_string());
                 }
             }
         });
@@ -78,19 +81,19 @@ pub fn Recovery(
         <div class="modal-overlay">
             <div class="modal-card modal-wide">
                 <div class="modal-header">
-                    <h2>"Kit de Secours"</h2>
-                    <p class="modal-subtitle">"Gérez votre phrase de récupération"</p>
+                    <h2>{move || t("recovery.title", lang.get())}</h2>
+                    <p class="modal-subtitle">{move || t("recovery.subtitle", lang.get())}</p>
                 </div>
 
                 <div class="recovery-content">
                     <div class="recovery-section">
-                        <h3>"Générer la Phrase de Récupération"</h3>
+                        <h3>{move || t("recovery.generate_title", lang.get())}</h3>
                         <p class="form-hint">
-                            "Cette phrase de 24 mots permet de régénérer votre clé de périphérique. "
-                            <strong>"Imprimez-la et gardez-la en lieu sûr !"</strong>
+                            {move || t("recovery.generate_hint", lang.get())}
+                            <strong>{move || t("recovery.generate_hint_bold", lang.get())}</strong>
                         </p>
                         <button class="btn btn-primary" on:click=generate disabled=move || loading.get()>
-                            "Générer la Phrase"
+                            {move || t("recovery.generate_btn", lang.get())}
                         </button>
 
                         {move || {
@@ -112,7 +115,7 @@ pub fn Recovery(
                                             }).collect_view()}
                                         </div>
                                         <p class="warning-text">
-                                            "ATTENTION : Ne partagez JAMAIS cette phrase. Quiconque la possède peut accéder à vos données."
+                                            {move || t("recovery.phrase_warning", lang.get())}
                                         </p>
                                     </div>
                                 }.into_any()
@@ -123,12 +126,12 @@ pub fn Recovery(
                     <hr class="divider" />
 
                     <div class="recovery-section">
-                        <h3>"Restaurer depuis une Phrase"</h3>
+                        <h3>{move || t("recovery.restore_title", lang.get())}</h3>
                         <button
                             class="btn btn-ghost"
                             on:click=move |_| set_show_recover.set(!show_recover.get_untracked())
                         >
-                            {move || if show_recover.get() { "Masquer" } else { "Afficher le formulaire de restauration" }}
+                            {move || if show_recover.get() { t("hide", lang.get()) } else { t("recovery.show_restore", lang.get()) }}
                         </button>
 
                         {move || {
@@ -136,7 +139,7 @@ pub fn Recovery(
                                 view! {
                                     <form class="auth-form" on:submit=handle_recover>
                                         <div class="form-group">
-                                            <label>"Phrase de 24 mots"</label>
+                                            <label>{move || t("recovery.phrase_label", lang.get())}</label>
                                             <textarea
                                                 rows=3
                                                 placeholder="mot1 mot2 mot3 ..."
@@ -145,7 +148,7 @@ pub fn Recovery(
                                             />
                                         </div>
                                         <button type="submit" class="btn btn-primary" disabled=move || loading.get()>
-                                            "Restaurer la clé"
+                                            {move || t("recovery.restore_btn", lang.get())}
                                         </button>
                                     </form>
                                 }.into_any()
@@ -167,7 +170,7 @@ pub fn Recovery(
 
                 <div class="form-actions">
                     <button class="btn btn-ghost" on:click=move |_| on_close.run(())>
-                        "Fermer"
+                        {move || t("close", lang.get())}
                     </button>
                 </div>
             </div>

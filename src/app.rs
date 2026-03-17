@@ -8,6 +8,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::components::dashboard::Dashboard;
+use crate::components::documentation::Documentation;
 use crate::components::login::Login;
 use crate::components::nag_screen::NagScreen;
 use crate::components::panic_unlock::PanicUnlock;
@@ -15,6 +16,7 @@ use crate::components::recovery::Recovery;
 use crate::components::register::Register;
 use crate::components::saladier_view::SaladierView;
 use crate::components::settings::{AutoLockTimeout, Settings, Theme, UserSettings};
+use crate::i18n::{Language, load_language, save_language};
 
 #[wasm_bindgen]
 extern "C" {
@@ -33,6 +35,7 @@ enum AppView {
     SaladierView { uuid: String, name: String },
     Recovery,
     Settings,
+    Documentation,
 }
 
 /// Apply theme by setting data-theme attribute on <html>.
@@ -101,6 +104,16 @@ fn check_recovery_and_navigate(
 
 #[component]
 pub fn App() -> impl IntoView {
+    // ── Language context ──
+    let (lang, set_lang) = signal(load_language());
+    provide_context(lang);
+    provide_context(set_lang);
+
+    // Persist language to localStorage when changed
+    Effect::new(move |_| {
+        save_language(lang.get());
+    });
+
     let (current_view, set_current_view) = signal(AppView::Login);
 
     // User settings (loaded after login for auto-lock + screenshot protection)
@@ -167,6 +180,14 @@ pub fn App() -> impl IntoView {
     });
 
     let on_settings_back = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Dashboard);
+    });
+
+    let on_show_docs = Callback::new(move |_: ()| {
+        set_current_view.set(AppView::Documentation);
+    });
+
+    let on_docs_back = Callback::new(move |_: ()| {
         set_current_view.set(AppView::Dashboard);
     });
 
@@ -362,6 +383,20 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div class="app">
+            <button
+                class="lang-toggle"
+                on:click=move |_| {
+                    set_lang.set(match lang.get() {
+                        Language::Fr => Language::En,
+                        Language::En => Language::Fr,
+                    });
+                }
+            >
+                {move || match lang.get() {
+                    Language::Fr => "EN",
+                    Language::En => "FR",
+                }}
+            </button>
             {move || {
                 match current_view.get() {
                     AppView::Login => {
@@ -392,6 +427,7 @@ pub fn App() -> impl IntoView {
                                 on_logout=set_on_logout
                                 on_show_recovery=on_show_recovery
                                 on_show_settings=on_show_settings
+                                on_show_docs=on_show_docs
                             />
                         }.into_any()
                     }
@@ -422,6 +458,11 @@ pub fn App() -> impl IntoView {
                     AppView::Settings => {
                         view! {
                             <Settings on_back=on_settings_back />
+                        }.into_any()
+                    }
+                    AppView::Documentation => {
+                        view! {
+                            <Documentation on_back=on_docs_back />
                         }.into_any()
                     }
                 }

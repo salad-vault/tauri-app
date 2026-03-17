@@ -1,5 +1,6 @@
 mod app;
 mod components;
+pub mod i18n;
 
 use app::*;
 use leptos::prelude::*;

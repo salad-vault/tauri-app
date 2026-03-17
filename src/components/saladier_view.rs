@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::components::feuille_form::FeuilleForm;
 use crate::components::settings::UserSettings;
+use crate::i18n::{t, Language};
 
 #[wasm_bindgen]
 extern "C" {
@@ -53,6 +54,7 @@ pub fn SaladierView(
     saladier_name: String,
     on_back: Callback<()>,
 ) -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (feuilles, set_feuilles) = signal(Vec::<FeuilleInfo>::new());
     let (show_form, set_show_form) = signal(false);
     let (editing_feuille, set_editing_feuille) = signal(Option::<FeuilleInfo>::None);
@@ -132,7 +134,7 @@ pub fn SaladierView(
                             load();
                         }
                         Err(_) => {
-                            set_delete_error.set("Mot de passe du Saladier incorrect.".to_string());
+                            set_delete_error.set(t("sv.wrong_saladier_pwd", lang.get()).to_string());
                         }
                     }
                 });
@@ -145,7 +147,7 @@ pub fn SaladierView(
             <header class="dashboard-header">
                 <div class="header-left">
                     <button class="btn btn-ghost" on:click=move |_| on_back.run(())>
-                        "← Retour"
+                        {move || t("back", lang.get())}
                     </button>
                     <span class="header-icon">"🥗"</span>
                     <h1>{saladier_name}</h1>
@@ -155,7 +157,7 @@ pub fn SaladierView(
                         set_editing_feuille.set(None);
                         set_show_form.set(true);
                     }>
-                        "+ Nouvelle Feuille"
+                        {move || t("sv.new_entry", lang.get())}
                     </button>
                 </div>
             </header>
@@ -168,9 +170,9 @@ pub fn SaladierView(
                         <div class="modal-overlay">
                             <div class="modal-card">
                                 <div class="modal-header">
-                                    <h2>"Supprimer la Feuille"</h2>
+                                    <h2>{move || t("sv.delete_entry", lang.get())}</h2>
                                     <p class="modal-subtitle">
-                                        "Voulez-vous vraiment supprimer « " {title_display} " » ?"
+                                        {move || t("sv.delete_confirm_pre", lang.get())} {title_display} " » ?"
                                     </p>
                                 </div>
                                 <form class="auth-form" on:submit={
@@ -181,14 +183,14 @@ pub fn SaladierView(
                                     }
                                 }>
                                     <div class="form-group">
-                                        <label>"Mot de passe du Saladier"</label>
+                                        <label>{move || t("sv.saladier_pwd", lang.get())}</label>
                                         <input
                                             type="password"
-                                            placeholder="Mot de passe de ce Saladier"
+                                            placeholder=move || t("sv.saladier_pwd_placeholder", lang.get())
                                             required=true
                                             on:input=move |ev| set_delete_password.set(event_target_value(&ev))
                                         />
-                                        <span class="form-hint">"Entrez le mot de passe du Saladier pour confirmer."</span>
+                                        <span class="form-hint">{move || t("sv.delete_hint", lang.get())}</span>
                                     </div>
                                     {move || {
                                         let err = delete_error.get();
@@ -204,10 +206,10 @@ pub fn SaladierView(
                                             set_delete_password.set(String::new());
                                             set_delete_error.set(String::new());
                                         }>
-                                            "Annuler"
+                                            {move || t("cancel", lang.get())}
                                         </button>
                                         <button type="submit" class="btn btn-primary btn-danger" disabled=move || delete_loading.get()>
-                                            {move || if delete_loading.get() { "Suppression..." } else { "Supprimer" }}
+                                            {move || if delete_loading.get() { t("deleting", lang.get()) } else { t("delete", lang.get()) }}
                                         </button>
                                     </div>
                                 </form>
@@ -280,7 +282,7 @@ pub fn SaladierView(
                                                 set_show_form.set(true);
                                             }
                                         >
-                                            "Modifier"
+                                            {move || t("edit", lang.get())}
                                         </button>
                                         <button
                                             class="btn btn-ghost btn-danger btn-sm"
@@ -290,13 +292,13 @@ pub fn SaladierView(
                                                 set_delete_password.set(String::new());
                                             }
                                         >
-                                            "Supprimer"
+                                            {move || t("delete", lang.get())}
                                         </button>
                                     </div>
                                 </div>
                                 <div class="feuille-details">
                                     <div class="feuille-field">
-                                        <span class="field-label">"Identifiant"</span>
+                                        <span class="field-label">{move || t("sv.username", lang.get())}</span>
                                         <span class="field-value">{data.username.clone()}</span>
                                         <button
                                             class="btn btn-ghost btn-xs copy-btn"
@@ -332,16 +334,16 @@ pub fn SaladierView(
                                                 let id = feuille_uuid.clone();
                                                 move || {
                                                     if copied_field.get() == format!("{}-user", id) {
-                                                        "Copié !"
+                                                        t("copied", lang.get())
                                                     } else {
-                                                        "Copier"
+                                                        t("copy", lang.get())
                                                     }
                                                 }
                                             }
                                         </button>
                                     </div>
                                     <div class="feuille-field">
-                                        <span class="field-label">"Mot de passe"</span>
+                                        <span class="field-label">{move || t("password", lang.get())}</span>
                                         <span class="field-value password-field">"••••••••"</span>
                                         <button
                                             class="btn btn-ghost btn-xs copy-btn"
@@ -377,9 +379,9 @@ pub fn SaladierView(
                                                 let id = feuille_uuid2.clone();
                                                 move || {
                                                     if copied_field.get() == format!("{}-pwd", id) {
-                                                        "Copié !"
+                                                        t("copied", lang.get())
                                                     } else {
-                                                        "Copier"
+                                                        t("copy", lang.get())
                                                     }
                                                 }
                                             }
@@ -389,7 +391,7 @@ pub fn SaladierView(
                                         if !data.url.is_empty() {
                                             view! {
                                                 <div class="feuille-field">
-                                                    <span class="field-label">"URL"</span>
+                                                    <span class="field-label">{t("url", lang.get())}</span>
                                                     <span class="field-value">{data.url.clone()}</span>
                                                 </div>
                                             }.into_any()
@@ -401,7 +403,7 @@ pub fn SaladierView(
                                         if !data.notes.is_empty() {
                                             view! {
                                                 <div class="feuille-field">
-                                                    <span class="field-label">"Notes"</span>
+                                                    <span class="field-label">{t("notes", lang.get())}</span>
                                                     <span class="field-value notes">{data.notes.clone()}</span>
                                                 </div>
                                             }.into_any()
@@ -421,8 +423,8 @@ pub fn SaladierView(
                     view! {
                         <div class="empty-state">
                             <p class="empty-icon">"🍃"</p>
-                            <p>"Ce Saladier est vide."</p>
-                            <p class="empty-hint">"Ajoutez votre première Feuille pour stocker un identifiant."</p>
+                            <p>{move || t("sv.empty_title", lang.get())}</p>
+                            <p class="empty-hint">{move || t("sv.empty_hint", lang.get())}</p>
                         </div>
                     }.into_any()
                 } else {

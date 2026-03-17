@@ -3,6 +3,8 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::i18n::{t, Language};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -17,6 +19,7 @@ struct SaladierInfo {
 
 #[component]
 pub fn SettingsData() -> impl IntoView {
+    let lang = expect_context::<ReadSignal<Language>>();
     let (saladiers, set_saladiers) = signal(Vec::<SaladierInfo>::new());
     let (import_target, set_import_target) = signal(String::new());
     let (import_msg, set_import_msg) = signal(String::new());
@@ -48,10 +51,10 @@ pub fn SettingsData() -> impl IntoView {
             set_maintenance_loading.set(false);
             match result {
                 Ok(_) => {
-                    set_maintenance_msg.set("Base de données optimisée avec succès.".to_string());
+                    set_maintenance_msg.set(t("data.vacuum_success", lang.get()).to_string());
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("Erreur : {}", err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
                 }
             }
         });
@@ -67,13 +70,13 @@ pub fn SettingsData() -> impl IntoView {
             match result {
                 Ok(val) => {
                     if let Some(msg) = val.as_string() {
-                        set_maintenance_msg.set(format!("Résultat : {msg}"));
+                        set_maintenance_msg.set(format!("{}: {msg}", t("data.result_prefix", lang.get())));
                     } else {
-                        set_maintenance_msg.set("Vérification terminée.".to_string());
+                        set_maintenance_msg.set(t("data.integrity_done", lang.get()).to_string());
                     }
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("Erreur : {}", err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
                 }
             }
         });
@@ -82,7 +85,7 @@ pub fn SettingsData() -> impl IntoView {
     let handle_import = move |source: &'static str| {
         let target = import_target.get_untracked();
         if target.is_empty() {
-            set_import_error.set("Veuillez sélectionner un Saladier cible.".to_string());
+            set_import_error.set(t("data.select_target", lang.get()).to_string());
             return;
         }
         set_import_msg.set(String::new());
@@ -102,10 +105,10 @@ pub fn SettingsData() -> impl IntoView {
             }).unwrap();
             match invoke("import_passwords", args).await {
                 Ok(_) => {
-                    set_import_msg.set("Import réussi !".to_string());
+                    set_import_msg.set(t("data.import_success", lang.get()).to_string());
                 }
                 Err(err) => {
-                    set_import_error.set(format!("Erreur : {}", err.as_string().unwrap_or_default()));
+                    set_import_error.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
                 }
             }
         });
@@ -116,10 +119,10 @@ pub fn SettingsData() -> impl IntoView {
             let args = serde_wasm_bindgen::to_value(&()).unwrap();
             match invoke("export_encrypted_json", args).await {
                 Ok(_) => {
-                    set_maintenance_msg.set("Export JSON chiffré terminé.".to_string());
+                    set_maintenance_msg.set(t("data.export_json_done", lang.get()).to_string());
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("Erreur : {}", err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
                 }
             }
         });
@@ -130,10 +133,10 @@ pub fn SettingsData() -> impl IntoView {
             let args = serde_wasm_bindgen::to_value(&()).unwrap();
             match invoke("export_csv_clear", args).await {
                 Ok(_) => {
-                    set_maintenance_msg.set("Export CSV terminé.".to_string());
+                    set_maintenance_msg.set(t("data.export_csv_done", lang.get()).to_string());
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("Erreur : {}", err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
                 }
             }
         });
@@ -141,14 +144,14 @@ pub fn SettingsData() -> impl IntoView {
 
     view! {
         <div class="settings-section">
-            <h2 class="settings-section-title">"💾 Données & Sauvegardes"</h2>
-            <p class="settings-section-desc">"Importez, exportez et maintenez vos données."</p>
+            <h2 class="settings-section-title">{move || t("data.section_title", lang.get())}</h2>
+            <p class="settings-section-desc">{move || t("data.section_desc", lang.get())}</p>
 
             // Import section
             <div class="settings-group">
-                <h3>"Importation"</h3>
+                <h3>{move || t("data.import_title", lang.get())}</h3>
                 <div class="settings-row">
-                    <label>"Saladier cible"</label>
+                    <label>{move || t("data.target_saladier", lang.get())}</label>
                     <select
                         class="settings-select"
                         on:change=move |ev| set_import_target.set(event_target_value(&ev))
@@ -196,27 +199,27 @@ pub fn SettingsData() -> impl IntoView {
 
             // Export section
             <div class="settings-group">
-                <h3>"Exportation"</h3>
+                <h3>{move || t("data.export_title", lang.get())}</h3>
                 <div class="import-buttons">
                     <button class="btn btn-ghost btn-sm" on:click=handle_export_json>
-                        "📤 JSON Chiffré"
+                        {move || t("data.export_encrypted", lang.get())}
                     </button>
                     <button class="btn btn-ghost btn-danger btn-sm" on:click=handle_export_csv>
-                        "⚠️ CSV Clair"
+                        {move || t("data.export_csv", lang.get())}
                     </button>
                 </div>
-                <p class="settings-hint settings-hint-danger">"L'export CSV clair contient tous vos mots de passe en texte lisible. Utilisez avec précaution."</p>
+                <p class="settings-hint settings-hint-danger">{move || t("data.export_csv_warn", lang.get())}</p>
             </div>
 
             // Maintenance section
             <div class="settings-group">
-                <h3>"Maintenance de la base de données"</h3>
+                <h3>{move || t("data.maintenance", lang.get())}</h3>
                 <div class="import-buttons">
                     <button class="btn btn-ghost btn-sm" on:click=handle_vacuum disabled=move || maintenance_loading.get()>
-                        "🔧 Optimiser le stockage"
+                        {move || t("data.vacuum", lang.get())}
                     </button>
                     <button class="btn btn-ghost btn-sm" on:click=handle_integrity disabled=move || maintenance_loading.get()>
-                        "🔍 Vérifier l'intégrité"
+                        {move || t("data.integrity", lang.get())}
                     </button>
                 </div>
                 {move || {
