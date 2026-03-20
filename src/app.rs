@@ -286,6 +286,19 @@ pub fn App() -> impl IntoView {
                     listeners.borrow_mut().push(("mousemove".to_string(), closure));
                 }
 
+                // Attach touchstart listener (mobile)
+                {
+                    let cb = make_activity_cb.clone();
+                    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+                        cb();
+                    }) as Box<dyn Fn()>);
+                    let _ = window.add_event_listener_with_callback(
+                        "touchstart",
+                        closure.as_ref().unchecked_ref(),
+                    );
+                    listeners.borrow_mut().push(("touchstart".to_string(), closure));
+                }
+
                 // Attach keydown listener
                 {
                     let cb = make_activity_cb.clone();

@@ -56,41 +56,53 @@ pub async fn get_device_key_path(state: State<'_, AppState>) -> Result<String, A
 
 /// Move the device key to a new location (e.g., USB drive for cold storage).
 /// Uses the Tauri file dialog for path selection on the frontend.
+/// Not available on mobile — the device key stays in the app data directory.
 #[tauri::command]
 pub async fn move_device_key(
     new_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, AppError> {
-    let current_path = state.device_key_path();
-
-    if !current_path.exists() {
-        return Err(AppError::KeyFileNotFound);
+    #[cfg(mobile)]
+    {
+        let _ = (new_path, state);
+        return Err(AppError::Internal(
+            "Le déplacement de la clé n'est pas disponible sur mobile".to_string(),
+        ));
     }
 
-    let new_path = std::path::PathBuf::from(&new_path);
+    #[cfg(not(mobile))]
+    {
+        let current_path = state.device_key_path();
 
-    // Ensure the target directory exists
-    if let Some(parent) = new_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        if !current_path.exists() {
+            return Err(AppError::KeyFileNotFound);
+        }
+
+        let new_path = std::path::PathBuf::from(&new_path);
+
+        // Ensure the target directory exists
+        if let Some(parent) = new_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Copy the file to the new location
+        std::fs::copy(&current_path, &new_path)?;
+
+        // Verify the copy is successful by reading both
+        let original = std::fs::read(&current_path)?;
+        let copied = std::fs::read(&new_path)?;
+
+        if original != copied {
+            // Remove the failed copy
+            let _ = std::fs::remove_file(&new_path);
+            return Err(AppError::Internal("Copy verification failed".to_string()));
+        }
+
+        // Remove the original
+        std::fs::remove_file(&current_path)?;
+
+        Ok(new_path.to_string_lossy().to_string())
     }
-
-    // Copy the file to the new location
-    std::fs::copy(&current_path, &new_path)?;
-
-    // Verify the copy is successful by reading both
-    let original = std::fs::read(&current_path)?;
-    let copied = std::fs::read(&new_path)?;
-
-    if original != copied {
-        // Remove the failed copy
-        let _ = std::fs::remove_file(&new_path);
-        return Err(AppError::Internal("Copy verification failed".to_string()));
-    }
-
-    // Remove the original
-    std::fs::remove_file(&current_path)?;
-
-    Ok(new_path.to_string_lossy().to_string())
 }
 
 /// Export the device key as a base64 string for QR code display.

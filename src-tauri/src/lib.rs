@@ -26,21 +26,29 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
-            std::fs::create_dir_all(&data_dir)
-                .expect("Failed to create application data directory");
+            if let Err(e) = std::fs::create_dir_all(&data_dir) {
+                log::error!("Failed to create application data directory: {e}");
+                panic!("Failed to create application data directory: {e}");
+            }
 
             let db_path = data_dir.join("saladvault.db");
 
             // Open the database.
             // All sensitive data is encrypted at the application level (XChaCha20-Poly1305)
             // before being stored, so the DB file contains only encrypted blobs.
-            let conn = db::open_database(&db_path)
-                .expect("Failed to open database");
+            let conn = match db::open_database(&db_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("Failed to open database: {e}");
+                    panic!("Failed to open database: {e}");
+                }
+            };
 
             let app_state = AppState::new(conn, data_dir);
             app.manage(app_state);
 
-            // Apply screenshot protection by default
+            // Apply screenshot protection by default (desktop only)
+            #[cfg(not(mobile))]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_content_protected(true);
             }
@@ -111,7 +119,10 @@ pub fn run() {
             sync::commands::deadman_heartbeat,
             sync::commands::deadman_update_config,
             sync::commands::generate_recovery_kit,
+            sync::commands::subscription_status,
+            sync::commands::subscription_checkout,
+            sync::commands::subscription_portal,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("Error while running tauri application");
 }

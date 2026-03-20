@@ -109,6 +109,26 @@ pub struct MfaVerifyRequest {
     pub totp_code: String,
 }
 
+// ── Subscription types ──
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct SubscriptionStatusResponse {
+    pub plan: String,
+    pub status: String,
+    pub trial_end: Option<String>,
+    pub current_period_end: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CheckoutSessionResponse {
+    pub checkout_url: String,
+}
+
+#[derive(Deserialize)]
+pub struct PortalSessionResponse {
+    pub portal_url: String,
+}
+
 #[derive(Deserialize)]
 struct ApiErrorResponse {
     error: String,
@@ -377,6 +397,65 @@ impl ApiClient {
         let resp = self
             .client
             .get(self.url("/deadman/status"))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_error(resp).await)
+        }
+    }
+
+    // ── Subscription ──
+
+    pub async fn subscription_status(
+        &self,
+        access_token: &str,
+    ) -> Result<SubscriptionStatusResponse, AppError> {
+        let resp = self
+            .client
+            .get(self.url("/subscription/status"))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_error(resp).await)
+        }
+    }
+
+    pub async fn subscription_checkout(
+        &self,
+        access_token: &str,
+    ) -> Result<CheckoutSessionResponse, AppError> {
+        let resp = self
+            .client
+            .post(self.url("/subscription/checkout"))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_error(resp).await)
+        }
+    }
+
+    pub async fn subscription_portal(
+        &self,
+        access_token: &str,
+    ) -> Result<PortalSessionResponse, AppError> {
+        let resp = self
+            .client
+            .post(self.url("/subscription/portal"))
             .bearer_auth(access_token)
             .send()
             .await

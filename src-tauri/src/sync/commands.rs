@@ -507,6 +507,63 @@ pub async fn deadman_update_config(
     Ok(())
 }
 
+// ── Subscription commands ──
+
+/// Get the current subscription status.
+#[tauri::command]
+pub async fn subscription_status(
+    state: State<'_, AppState>,
+) -> Result<crate::sync::client::SubscriptionStatusResponse, AppError> {
+    let token = get_access_token(&state)?;
+    let client = get_api_client(&state)?;
+
+    match client.subscription_status(&token).await {
+        Err(AppError::ServerUnauthorized) => {
+            let new_token = try_refresh_token(&state).await?;
+            client.subscription_status(&new_token).await
+        }
+        other => other,
+    }
+}
+
+/// Create a Stripe Checkout session and return the URL.
+#[tauri::command]
+pub async fn subscription_checkout(
+    state: State<'_, AppState>,
+) -> Result<String, AppError> {
+    let token = get_access_token(&state)?;
+    let client = get_api_client(&state)?;
+
+    let resp = match client.subscription_checkout(&token).await {
+        Err(AppError::ServerUnauthorized) => {
+            let new_token = try_refresh_token(&state).await?;
+            client.subscription_checkout(&new_token).await?
+        }
+        other => other?,
+    };
+
+    Ok(resp.checkout_url)
+}
+
+/// Create a Stripe Customer Portal session and return the URL.
+#[tauri::command]
+pub async fn subscription_portal(
+    state: State<'_, AppState>,
+) -> Result<String, AppError> {
+    let token = get_access_token(&state)?;
+    let client = get_api_client(&state)?;
+
+    let resp = match client.subscription_portal(&token).await {
+        Err(AppError::ServerUnauthorized) => {
+            let new_token = try_refresh_token(&state).await?;
+            client.subscription_portal(&new_token).await?
+        }
+        other => other?,
+    };
+
+    Ok(resp.portal_url)
+}
+
 // ── Recovery Kit commands ──
 
 #[derive(Deserialize)]

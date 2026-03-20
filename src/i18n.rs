@@ -540,6 +540,16 @@ pub fn t(key: &'static str, lang: Language) -> &'static str {
         ("sub.feat_deadman", En) => "Dead Man's Switch",
         ("sub.feat_0knowledge", Fr) => "Zero-Knowledge complet",
         ("sub.feat_0knowledge", En) => "Full Zero-Knowledge",
+        ("sub.trial_badge", Fr) => "Essai gratuit",
+        ("sub.trial_badge", En) => "Free trial",
+        ("sub.loading", Fr) => "Chargement...",
+        ("sub.loading", En) => "Loading...",
+        ("sub.manage_subscription", Fr) => "Gérer mon abonnement",
+        ("sub.manage_subscription", En) => "Manage subscription",
+        ("sub.upgrade_maraicher", Fr) => "Passer à Maraîcher Pro",
+        ("sub.upgrade_maraicher", En) => "Upgrade to Market Gardener Pro",
+        ("sub.connect_first", Fr) => "Connectez-vous au serveur",
+        ("sub.connect_first", En) => "Connect to server first",
 
         // ── Password validation (alternate keys) ──
         ("pwd.uppercase", Fr) => "Le mot de passe doit contenir au moins une majuscule.",

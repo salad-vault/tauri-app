@@ -40,9 +40,12 @@ pub async fn apply_screenshot_protection(
     enabled: bool,
     window: tauri::Window,
 ) -> Result<(), AppError> {
+    #[cfg(not(mobile))]
     window
         .set_content_protected(enabled)
         .map_err(|e| AppError::Internal(format!("Screenshot protection error: {e}")))?;
+    #[cfg(mobile)]
+    let _ = (enabled, window);
     Ok(())
 }
 

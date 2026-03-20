@@ -62,7 +62,7 @@ base64 = "0.22"
 tokio = { version = "1", features = ["sync"] }
 
 # Sync (server communication)
-reqwest = { version = "0.12", features = ["json", "native-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 hex = "0.4"
 
 [dev-dependencies]
