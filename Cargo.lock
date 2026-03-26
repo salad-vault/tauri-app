@@ -4276,6 +4276,7 @@ dependencies = [
  "hex",
  "hkdf",
  "hmac",
+ "log",
  "qrcodegen",
  "quick-xml 0.36.2",
  "rand 0.8.5",
