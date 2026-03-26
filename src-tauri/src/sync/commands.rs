@@ -363,6 +363,109 @@ pub async fn server_is_connected(state: State<'_, AppState>) -> Result<bool, App
     Ok(tokens.is_some())
 }
 
+// ── Account Deletion ──
+
+#[derive(Deserialize)]
+pub struct DeleteAccountArgs {
+    #[serde(rename = "totpCode")]
+    pub totp_code: String,
+}
+
+/// Delete the server account. Requires a valid TOTP code.
+/// Clears local server auth data after successful deletion.
+#[tauri::command]
+pub async fn server_delete_account(
+    state: State<'_, AppState>,
+    args: DeleteAccountArgs,
+) -> Result<(), AppError> {
+    let token = get_access_token(&state)?;
+    let client = get_api_client(&state)?;
+
+    let req = crate::sync::client::DeleteAccountRequest {
+        totp_code: args.totp_code.clone(),
+    };
+
+    // Try with current token, refresh if needed
+    match client.delete_account(&token, &req).await {
+        Err(AppError::ServerUnauthorized) => {
+            let new_token = try_refresh_token(&state).await?;
+            client.delete_account(&new_token, &req).await?;
+        }
+        other => { other?; }
+    };
+
+    // Clear tokens from memory (same as logout)
+    {
+        let mut tokens = state.server_tokens.lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        *tokens = None;
+    }
+
+    // Delete persisted tokens from disk
+    if let Ok((user_id, _)) = state.require_session() {
+        let conn = state.db.lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let _ = db::server_auth::delete(&conn, &user_id);
+    }
+
+    Ok(())
+}
+
+// ── Email Verification ──
+
+#[derive(Deserialize)]
+pub struct SendVerificationArgs {
+    pub email: String,
+    #[serde(rename = "apiUrl")]
+    pub api_url: String,
+}
+
+/// Send a verification code to the user's email address.
+/// Called before server_register to verify email ownership.
+#[tauri::command]
+pub async fn server_send_verification(
+    args: SendVerificationArgs,
+) -> Result<bool, AppError> {
+    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
+    let client = ApiClient::new(&args.api_url);
+
+    let resp = client
+        .send_verification_code(&crate::sync::client::SendVerificationCodeRequest {
+            blind_id,
+            email: args.email,
+        })
+        .await?;
+
+    Ok(resp.sent)
+}
+
+#[derive(Deserialize)]
+pub struct VerifyCodeArgs {
+    pub email: String,
+    pub code: String,
+    #[serde(rename = "apiUrl")]
+    pub api_url: String,
+}
+
+/// Verify the 6-digit code sent to the user's email.
+/// Must be called before server_register.
+#[tauri::command]
+pub async fn server_verify_code(
+    args: VerifyCodeArgs,
+) -> Result<bool, AppError> {
+    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
+    let client = ApiClient::new(&args.api_url);
+
+    let resp = client
+        .verify_code(&crate::sync::client::VerifyCodeRequest {
+            blind_id,
+            code: args.code,
+        })
+        .await?;
+
+    Ok(resp.verified)
+}
+
 // ── Sync commands ──
 
 /// Get the current sync status from the server.

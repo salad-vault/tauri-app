@@ -58,9 +58,31 @@ struct MfaChallengeInfo {
     mfa_challenge_token: String,
 }
 
+#[derive(Serialize)]
+struct SendVerificationArgs {
+    email: String,
+    #[serde(rename = "apiUrl")]
+    api_url: String,
+}
+
+#[derive(Serialize)]
+struct VerifyCodeArgs {
+    email: String,
+    code: String,
+    #[serde(rename = "apiUrl")]
+    api_url: String,
+}
+
+#[derive(Serialize)]
+struct DeleteAccountArgs {
+    #[serde(rename = "totpCode")]
+    totp_code: String,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum MfaPhase {
     None,
+    EmailVerification,
     Setup,
     Challenge,
 }
@@ -80,6 +102,11 @@ pub fn SettingsSync() -> impl IntoView {
     let (sync_version, set_sync_version) = signal(0i64);
     let (sync_updated, set_sync_updated) = signal(String::new());
     let (show_register, set_show_register) = signal(false);
+
+    // Account deletion state
+    let (show_delete_confirm, set_show_delete_confirm) = signal(false);
+    let (delete_totp, set_delete_totp) = signal(String::new());
+    let (delete_loading, set_delete_loading) = signal(false);
 
     // Dead Man's Switch state
     let (dm_enabled, set_dm_enabled) = signal(false);
@@ -181,31 +208,24 @@ pub fn SettingsSync() -> impl IntoView {
         });
     };
 
-    // ── Register step 1: credentials → MFA setup (QR code) ──
+    // ── Register step 1: send email verification code ──
     let handle_register = move |_| {
         set_loading.set(true);
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
         let e = email.get_untracked();
-        let p = password.get_untracked();
         let u = api_url.get_untracked();
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&ServerAuthArgs {
+            let args = serde_wasm_bindgen::to_value(&SendVerificationArgs {
                 email: e,
-                server_password: p,
                 api_url: u,
             })
             .unwrap();
-            match invoke("server_register", args).await {
-                Ok(result) => {
-                    if let Ok(info) = serde_wasm_bindgen::from_value::<MfaSetupInfo>(result) {
-                        set_mfa_setup_token.set(info.mfa_setup_token);
-                        set_mfa_qr_svg.set(info.qr_svg);
-                        set_mfa_secret_b32.set(info.totp_secret_base32);
-                        set_mfa_phase.set(MfaPhase::Setup);
-                        set_totp_code.set(String::new());
-                    }
+            match invoke("server_send_verification", args).await {
+                Ok(_) => {
+                    set_mfa_phase.set(MfaPhase::EmailVerification);
+                    set_totp_code.set(String::new());
                 }
                 Err(err) => {
                     set_error_msg.set(
@@ -215,6 +235,90 @@ pub fn SettingsSync() -> impl IntoView {
                 }
             }
             set_loading.set(false);
+        });
+    };
+
+    // ── Register step 1b: verify email code, then register ──
+    let handle_email_verify = move |_| {
+        set_loading.set(true);
+        set_error_msg.set(String::new());
+        let e = email.get_untracked();
+        let code = totp_code.get_untracked();
+        let u = api_url.get_untracked();
+        let p = password.get_untracked();
+
+        spawn_local(async move {
+            // Step 1: verify the email code
+            let verify_args = serde_wasm_bindgen::to_value(&VerifyCodeArgs {
+                email: e.clone(),
+                code,
+                api_url: u.clone(),
+            })
+            .unwrap();
+            match invoke("server_verify_code", verify_args).await {
+                Ok(_) => {
+                    // Step 2: proceed with actual registration
+                    let register_args = serde_wasm_bindgen::to_value(&ServerAuthArgs {
+                        email: e,
+                        server_password: p,
+                        api_url: u,
+                    })
+                    .unwrap();
+                    match invoke("server_register", register_args).await {
+                        Ok(result) => {
+                            if let Ok(info) = serde_wasm_bindgen::from_value::<MfaSetupInfo>(result) {
+                                set_mfa_setup_token.set(info.mfa_setup_token);
+                                set_mfa_qr_svg.set(info.qr_svg);
+                                set_mfa_secret_b32.set(info.totp_secret_base32);
+                                set_mfa_phase.set(MfaPhase::Setup);
+                                set_totp_code.set(String::new());
+                            }
+                        }
+                        Err(err) => {
+                            set_error_msg.set(
+                                err.as_string()
+                                    .unwrap_or_else(|| t("sync.register_error", lang.get()).to_string()),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    set_error_msg.set(
+                        err.as_string()
+                            .unwrap_or_else(|| t("sync.invalid_mfa", lang.get()).to_string()),
+                    );
+                }
+            }
+            set_loading.set(false);
+        });
+    };
+
+    // ── Account deletion handler ──
+    let handle_delete_account = move |_| {
+        set_delete_loading.set(true);
+        set_error_msg.set(String::new());
+        let code = delete_totp.get_untracked();
+
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&DeleteAccountArgs {
+                totp_code: code,
+            })
+            .unwrap();
+            match invoke("server_delete_account", args).await {
+                Ok(_) => {
+                    set_connected.set(false);
+                    set_show_delete_confirm.set(false);
+                    set_delete_totp.set(String::new());
+                    set_success_msg.set(t("sync.delete_account_success", lang.get()).to_string());
+                }
+                Err(err) => {
+                    set_error_msg.set(
+                        err.as_string()
+                            .unwrap_or_else(|| t("sync.invalid_mfa", lang.get()).to_string()),
+                    );
+                }
+            }
+            set_delete_loading.set(false);
         });
     };
 
@@ -505,6 +609,91 @@ pub fn SettingsSync() -> impl IntoView {
                             <button class="btn btn-ghost btn-danger btn-sm" on:click=handle_logout>
                                 {move || t("sync.logout", lang.get())}
                             </button>
+                        </div>
+
+                        // Danger zone — account deletion
+                        <div class="settings-group settings-danger-zone">
+                            <h3>{move || t("sync.danger_zone", lang.get())}</h3>
+                            {move || {
+                                if show_delete_confirm.get() {
+                                    view! {
+                                        <p class="settings-hint settings-warning">
+                                            {move || t("sync.delete_account_warning", lang.get())}
+                                        </p>
+                                        <label class="settings-label">{move || t("sync.delete_account_mfa", lang.get())}</label>
+                                        <input
+                                            type="text"
+                                            class="settings-input"
+                                            maxlength="6"
+                                            placeholder="000000"
+                                            prop:value=move || delete_totp.get()
+                                            on:input=move |ev| set_delete_totp.set(event_target_value(&ev))
+                                        />
+                                        <div class="settings-row" style="gap: 0.5rem; margin-top: 0.5rem;">
+                                            <button
+                                                class="btn btn-ghost btn-danger btn-sm"
+                                                disabled=move || delete_loading.get() || delete_totp.get().len() != 6
+                                                on:click=handle_delete_account
+                                            >
+                                                {move || if delete_loading.get() { t("sync.deleting_account", lang.get()).to_string() } else { t("sync.delete_account", lang.get()).to_string() }}
+                                            </button>
+                                            <button
+                                                class="btn btn-ghost btn-sm"
+                                                on:click=move |_| {
+                                                    set_show_delete_confirm.set(false);
+                                                    set_delete_totp.set(String::new());
+                                                }
+                                            >
+                                                {move || t("sync.cancel", lang.get())}
+                                            </button>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <button
+                                            class="btn btn-ghost btn-danger btn-sm"
+                                            on:click=move |_| set_show_delete_confirm.set(true)
+                                        >
+                                            {move || t("sync.delete_account", lang.get())}
+                                        </button>
+                                    }.into_any()
+                                }
+                            }}
+                        </div>
+                    }.into_any()
+                } else if mfa_phase.get() == MfaPhase::EmailVerification {
+                    // Email verification phase (registration step 1b)
+                    view! {
+                        <div class="settings-group">
+                            <h3>{move || t("sync.email_verification_title", lang.get())}</h3>
+                            <p class="settings-hint">{move || t("sync.email_verification_hint", lang.get())}</p>
+                            <label class="settings-label">{move || t("sync.email_verification_code", lang.get())}</label>
+                            <input
+                                type="text"
+                                class="settings-input"
+                                maxlength="6"
+                                placeholder="000000"
+                                prop:value=move || totp_code.get()
+                                on:input=move |ev| set_totp_code.set(event_target_value(&ev))
+                            />
+                            <div class="settings-row" style="gap: 0.5rem; margin-top: 0.5rem;">
+                                <button
+                                    class="btn btn-primary btn-sm"
+                                    disabled=move || loading.get() || totp_code.get().len() != 6
+                                    on:click=handle_email_verify
+                                >
+                                    {move || if loading.get() { t("sync.email_verifying", lang.get()).to_string() } else { t("sync.email_verify_btn", lang.get()).to_string() }}
+                                </button>
+                                <button
+                                    class="btn btn-ghost btn-sm"
+                                    on:click=move |_| {
+                                        set_mfa_phase.set(MfaPhase::None);
+                                        set_totp_code.set(String::new());
+                                    }
+                                >
+                                    {move || t("sync.cancel", lang.get())}
+                                </button>
+                            </div>
                         </div>
                     }.into_any()
                 } else if mfa_phase.get() == MfaPhase::Setup {

@@ -109,6 +109,42 @@ pub struct MfaVerifyRequest {
     pub totp_code: String,
 }
 
+// ── Account Deletion types ──
+
+#[derive(Serialize)]
+pub struct DeleteAccountRequest {
+    pub totp_code: String,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteAccountResponse {
+    pub deleted: bool,
+}
+
+// ── Email Verification types ──
+
+#[derive(Serialize)]
+pub struct SendVerificationCodeRequest {
+    pub blind_id: String,
+    pub email: String,
+}
+
+#[derive(Deserialize)]
+pub struct SendVerificationCodeResponse {
+    pub sent: bool,
+}
+
+#[derive(Serialize)]
+pub struct VerifyCodeRequest {
+    pub blind_id: String,
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+pub struct VerifyCodeResponse {
+    pub verified: bool,
+}
+
 // ── Subscription types ──
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -193,6 +229,46 @@ impl ApiClient {
             .map(|e| e.error)
             .unwrap_or_else(|_| format!("Erreur serveur ({})", status));
         AppError::ServerError(msg)
+    }
+
+    // ── Email Verification (public endpoints, no auth) ──
+
+    pub async fn send_verification_code(
+        &self,
+        req: &SendVerificationCodeRequest,
+    ) -> Result<SendVerificationCodeResponse, AppError> {
+        let resp = self
+            .client
+            .post(self.url("/auth/email/send-code"))
+            .json(req)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_auth_error(resp).await)
+        }
+    }
+
+    pub async fn verify_code(
+        &self,
+        req: &VerifyCodeRequest,
+    ) -> Result<VerifyCodeResponse, AppError> {
+        let resp = self
+            .client
+            .post(self.url("/auth/email/verify-code"))
+            .json(req)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_auth_error(resp).await)
+        }
     }
 
     // ── Auth ──
@@ -457,6 +533,29 @@ impl ApiClient {
             .client
             .post(self.url("/subscription/portal"))
             .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(Self::network_error)?;
+
+        if resp.status().is_success() {
+            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
+        } else {
+            Err(Self::extract_error(resp).await)
+        }
+    }
+
+    // ── Account Deletion ──
+
+    pub async fn delete_account(
+        &self,
+        access_token: &str,
+        req: &DeleteAccountRequest,
+    ) -> Result<DeleteAccountResponse, AppError> {
+        let resp = self
+            .client
+            .post(self.url("/auth/account/delete"))
+            .bearer_auth(access_token)
+            .json(req)
             .send()
             .await
             .map_err(Self::network_error)?;
