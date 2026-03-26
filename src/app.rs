@@ -16,7 +16,7 @@ use crate::components::recovery::Recovery;
 use crate::components::register::Register;
 use crate::components::saladier_view::SaladierView;
 use crate::components::settings::{AutoLockTimeout, Settings, Theme, UserSettings};
-use crate::i18n::{Language, load_language, save_language};
+use crate::i18n::{Language, load_language, save_language, t};
 
 #[wasm_bindgen]
 extern "C" {
@@ -121,7 +121,7 @@ pub fn App() -> impl IntoView {
     let (update_installing, set_update_installing) = signal(false);
     {
         let set_update_version = set_update_version;
-        Effect::new(move |already_ran| {
+        Effect::new(move |already_ran: Option<()>| {
             if already_ran.is_some() {
                 return;
             }
