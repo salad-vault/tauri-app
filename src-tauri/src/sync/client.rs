@@ -118,6 +118,7 @@ pub struct DeleteAccountRequest {
 
 #[derive(Deserialize)]
 pub struct DeleteAccountResponse {
+    #[allow(dead_code)]
     pub deleted: bool,
 }
 
