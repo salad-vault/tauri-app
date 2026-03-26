@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SaladVault",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.saladvault.app",
   "build": {
     "beforeDevCommand": "trunk serve --port 1420",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build",
+    "beforeBuildCommand": "trunk build --release",
     "frontendDist": "../dist"
   },
   "app": {
