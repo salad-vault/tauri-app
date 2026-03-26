@@ -19,6 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Resolve the app data directory for storing DB and device key
             let data_dir = app
@@ -104,6 +105,8 @@ pub fn run() {
             // Maintenance commands
             maintenance::vacuum_database,
             maintenance::check_integrity,
+            maintenance::check_for_update,
+            maintenance::install_update,
             // Password generator
             password_gen::generate_password,
             // Sync commands

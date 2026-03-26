@@ -3,6 +3,38 @@ use tauri::State;
 use crate::error::AppError;
 use crate::state::AppState;
 
+/// Check if a newer version is available. Returns the new version string or null.
+#[tauri::command]
+pub async fn check_for_update(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .check()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(update.map(|u| u.version))
+}
+
+/// Download and install the available update, then restart.
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<(), AppError> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .check()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if let Some(update) = update {
+        update
+            .download_and_install(|_, _| {}, || {})
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Optimize the database storage by running VACUUM.
 #[tauri::command]
 pub async fn vacuum_database(state: State<'_, AppState>) -> Result<(), AppError> {

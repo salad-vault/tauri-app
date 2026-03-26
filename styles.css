@@ -1750,3 +1750,60 @@ textarea {
     gap: 1rem;
   }
 }
+
+/* ── Update banner ── */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: #1c2128;
+  border-bottom: 1px solid #238636;
+  font-size: 0.85rem;
+  color: #e6edf3;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.update-btn-install {
+  padding: 0.25rem 0.75rem;
+  background: #238636;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.update-btn-install:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+.update-btn-install:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.update-btn-dismiss {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+}
+
+.update-btn-dismiss:hover {
+  color: #e6edf3;
+}

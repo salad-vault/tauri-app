@@ -915,6 +915,14 @@ pub fn t(key: &'static str, lang: Language) -> &'static str {
         ("doc.s8.a5", Fr) => "Oui ! L'utilisation locale (sur votre ordinateur) est entièrement gratuite et le restera. Des plans payants optionnels avec synchronisation cloud et partage familial seront proposés plus tard pour ceux qui en ont besoin.",
         ("doc.s8.a5", En) => "Yes! Local use (on your computer) is completely free and will remain so. Optional paid plans with cloud sync and family sharing will be offered later for those who need them.",
 
+        // ── Auto-updater ──
+        ("update.available", Fr) => "Mise à jour disponible",
+        ("update.available", En) => "Update available",
+        ("update.install", Fr) => "Installer",
+        ("update.install", En) => "Install",
+        ("update.installing", Fr) => "Installation...",
+        ("update.installing", En) => "Installing...",
+
         // ── Fallback ──
         _ => return key,
     }

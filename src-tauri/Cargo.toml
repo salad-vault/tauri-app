@@ -52,6 +52,7 @@ bip39 = "2"
 # Tauri plugins
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 
 # QR Code generation
 qrcodegen = "1.8"

@@ -116,6 +116,26 @@ pub fn App() -> impl IntoView {
 
     let (current_view, set_current_view) = signal(AppView::Login);
 
+    // Auto-updater: check once on launch
+    let (update_version, set_update_version) = signal(Option::<String>::None);
+    let (update_installing, set_update_installing) = signal(false);
+    {
+        let set_update_version = set_update_version;
+        Effect::new(move |already_ran| {
+            if already_ran.is_some() {
+                return;
+            }
+            spawn_local(async move {
+                let args = serde_wasm_bindgen::to_value(&()).unwrap();
+                if let Ok(result) = invoke("check_for_update", args).await {
+                    if let Some(version) = result.as_string() {
+                        set_update_version.set(Some(version));
+                    }
+                }
+            });
+        });
+    }
+
     // User settings (loaded after login for auto-lock + screenshot protection)
     let (user_settings, set_user_settings) = signal(Option::<UserSettings>::None);
 
@@ -396,6 +416,40 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div class="app">
+            // Update banner — shown only when a new version is available
+            {move || update_version.get().map(|version| {
+                let version_for_install = version.clone();
+                view! {
+                    <div class="update-banner">
+                        <span>{move || format!("{} (v{})", t("update.available", lang.get()), version)}</span>
+                        <div class="update-banner-actions">
+                            <button
+                                class="update-btn-install"
+                                disabled=move || update_installing.get()
+                                on:click=move |_| {
+                                    let v = version_for_install.clone();
+                                    let _ = v; // consume clone
+                                    set_update_installing.set(true);
+                                    spawn_local(async move {
+                                        let args = serde_wasm_bindgen::to_value(&()).unwrap();
+                                        let _ = invoke("install_update", args).await;
+                                    });
+                                }
+                            >
+                                {move || if update_installing.get() {
+                                    t("update.installing", lang.get())
+                                } else {
+                                    t("update.install", lang.get())
+                                }}
+                            </button>
+                            <button
+                                class="update-btn-dismiss"
+                                on:click=move |_| set_update_version.set(None)
+                            >"✕"</button>
+                        </div>
+                    </div>
+                }
+            })}
             <button
                 class="lang-toggle"
                 on:click=move |_| {
