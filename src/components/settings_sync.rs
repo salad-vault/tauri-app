@@ -81,6 +81,14 @@ pub fn SettingsSync() -> impl IntoView {
     let (sync_updated, set_sync_updated) = signal(String::new());
     let (show_register, set_show_register) = signal(false);
 
+    // Dead Man's Switch state
+    let (dm_enabled, set_dm_enabled) = signal(false);
+    let (dm_days, set_dm_days) = signal(90u32);
+    let (dm_email, set_dm_email) = signal(String::new());
+    let (dm_recovery_pwd, set_dm_recovery_pwd) = signal(String::new());
+    let (dm_last_seen, set_dm_last_seen) = signal(String::new());
+    let (dm_loading, set_dm_loading) = signal(false);
+
     // MFA state
     let (mfa_phase, set_mfa_phase) = signal(MfaPhase::None);
     let (mfa_setup_token, set_mfa_setup_token) = signal(String::new());
@@ -98,6 +106,7 @@ pub fn SettingsSync() -> impl IntoView {
                     set_connected.set(val);
                     if val {
                         load_sync_status(set_sync_version, set_sync_updated).await;
+                        load_deadman_status(set_dm_enabled, set_dm_days, set_dm_last_seen).await;
                     }
                 }
             }
@@ -301,6 +310,59 @@ pub fn SettingsSync() -> impl IntoView {
         });
     };
 
+    // ── Dead Man's Switch save ──
+    let handle_dm_save = move |_| {
+        let enabled = dm_enabled.get_untracked();
+        let days = dm_days.get_untracked();
+        let email = dm_email.get_untracked();
+        let pwd = dm_recovery_pwd.get_untracked();
+        set_dm_loading.set(true);
+        set_error_msg.set(String::new());
+        set_success_msg.set(String::new());
+
+        spawn_local(async move {
+            // Step 1: generate recovery kit if a password is provided
+            let blob: Option<String> = if !pwd.is_empty() {
+                #[derive(Serialize)]
+                struct GenArgs {
+                    #[serde(rename = "recoveryPassword")]
+                    recovery_password: String,
+                }
+                let args = serde_wasm_bindgen::to_value(&GenArgs { recovery_password: pwd }).unwrap();
+                match invoke("generate_recovery_kit", args).await {
+                    Ok(val) => val.as_string(),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            // Step 2: send config to server
+            #[derive(Serialize)]
+            struct DmArgs {
+                enabled: bool,
+                days: u32,
+                #[serde(rename = "recipientEmail")]
+                recipient_email: String,
+                #[serde(rename = "recoveryBlob")]
+                recovery_blob: Option<String>,
+            }
+            let args = serde_wasm_bindgen::to_value(&DmArgs {
+                enabled,
+                days,
+                recipient_email: email,
+                recovery_blob: blob,
+            }).unwrap();
+            match invoke("deadman_update_config", args).await {
+                Ok(_) => set_success_msg.set(t("general.deadman_saved", lang.get()).to_string()),
+                Err(err) => set_error_msg.set(
+                    err.as_string().unwrap_or_else(|| t("sync.sync_error", lang.get()).to_string())
+                ),
+            }
+            set_dm_loading.set(false);
+        });
+    };
+
     let handle_cancel_mfa = move |_| {
         set_mfa_phase.set(MfaPhase::None);
         set_totp_code.set(String::new());
@@ -363,6 +425,81 @@ pub fn SettingsSync() -> impl IntoView {
                                 </button>
                             </div>
                             <p class="settings-hint settings-hint-warn">{move || t("sync.pull_warning", lang.get())}</p>
+                        </div>
+                        // ── Dead Man's Switch ──
+                        <div class="settings-group">
+                            <h3>{move || t("general.deadman_title", lang.get())}</h3>
+                            <p class="settings-hint">{move || t("general.deadman_desc", lang.get())}</p>
+                            <div class="settings-row">
+                                <label>{move || t("general.deadman_enable", lang.get())}</label>
+                                <input
+                                    type="checkbox"
+                                    class="settings-toggle"
+                                    prop:checked=move || dm_enabled.get()
+                                    on:change=move |ev| set_dm_enabled.set(event_target_checked(&ev))
+                                />
+                            </div>
+                            <div class="settings-row">
+                                <label>{move || t("general.deadman_days", lang.get())}</label>
+                                <select
+                                    class="settings-select"
+                                    on:change=move |ev| {
+                                        let val: u32 = event_target_value(&ev).parse().unwrap_or(90);
+                                        set_dm_days.set(val);
+                                    }
+                                >
+                                    <option value="30" selected=move || dm_days.get() == 30>"30 jours"</option>
+                                    <option value="60" selected=move || dm_days.get() == 60>"60 jours"</option>
+                                    <option value="90" selected=move || dm_days.get() == 90>"90 jours"</option>
+                                    <option value="180" selected=move || dm_days.get() == 180>"180 jours"</option>
+                                    <option value="365" selected=move || dm_days.get() == 365>"1 an"</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label>{move || t("general.deadman_email", lang.get())}</label>
+                                <input
+                                    type="email"
+                                    class="settings-input"
+                                    placeholder="contact@example.com"
+                                    prop:value=move || dm_email.get()
+                                    on:input=move |ev| set_dm_email.set(event_target_value(&ev))
+                                />
+                            </div>
+                            <div class="settings-row">
+                                <label>{move || t("general.kit_password", lang.get())}</label>
+                                <input
+                                    type="password"
+                                    class="settings-input"
+                                    placeholder=move || t("general.kit_password_placeholder", lang.get())
+                                    prop:value=move || dm_recovery_pwd.get()
+                                    on:input=move |ev| set_dm_recovery_pwd.set(event_target_value(&ev))
+                                />
+                            </div>
+                            <p class="settings-hint">{move || t("general.deadman_recovery_hint", lang.get())}</p>
+                            {move || {
+                                let ls = dm_last_seen.get();
+                                if !ls.is_empty() {
+                                    view! {
+                                        <div class="settings-row">
+                                            <label>{move || t("general.deadman_last_seen", lang.get())}</label>
+                                            <span class="settings-value-muted">{ls}</span>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! { <div></div> }.into_any()
+                                }
+                            }}
+                            <button
+                                class="btn btn-primary btn-sm"
+                                on:click=handle_dm_save
+                                disabled=move || dm_loading.get()
+                            >
+                                {move || if dm_loading.get() {
+                                    t("general.deadman_saving", lang.get())
+                                } else {
+                                    t("general.deadman_save", lang.get())
+                                }}
+                            </button>
                         </div>
                         <div class="settings-group">
                             <button class="btn btn-ghost btn-danger btn-sm" on:click=handle_logout>
@@ -521,6 +658,28 @@ pub fn SettingsSync() -> impl IntoView {
                 }
             }}
         </div>
+    }
+}
+
+#[derive(Deserialize)]
+struct DeadmanStatus {
+    enabled: bool,
+    inactivity_days: u32,
+    last_seen_at: String,
+}
+
+async fn load_deadman_status(
+    set_enabled: WriteSignal<bool>,
+    set_days: WriteSignal<u32>,
+    set_last_seen: WriteSignal<String>,
+) {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    if let Ok(result) = invoke("deadman_status", args).await {
+        if let Ok(status) = serde_wasm_bindgen::from_value::<DeadmanStatus>(result) {
+            set_enabled.set(status.enabled);
+            set_days.set(status.inactivity_days);
+            set_last_seen.set(status.last_seen_at);
+        }
     }
 }
 

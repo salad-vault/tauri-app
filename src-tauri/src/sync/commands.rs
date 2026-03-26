@@ -320,6 +320,11 @@ pub async fn server_login_verify_mfa(
         });
     }
 
+    // Best-effort heartbeat to update last_seen_at on the server after login
+    if let Ok(token) = get_access_token(&state) {
+        let _ = client.deadman_heartbeat(&token).await;
+    }
+
     Ok(())
 }
 
@@ -452,6 +457,34 @@ pub async fn sync_pull(state: State<'_, AppState>) -> Result<SyncStatus, AppErro
 }
 
 // ── Dead Man's Switch commands ──
+
+#[derive(Serialize)]
+pub struct DeadmanStatus {
+    pub enabled: bool,
+    pub inactivity_days: u32,
+    pub last_seen_at: String,
+}
+
+/// Get the Dead Man's Switch status from the server.
+#[tauri::command]
+pub async fn deadman_status(state: State<'_, AppState>) -> Result<DeadmanStatus, AppError> {
+    let token = get_access_token(&state)?;
+    let client = get_api_client(&state)?;
+
+    let resp = match client.deadman_status(&token).await {
+        Err(AppError::ServerUnauthorized) => {
+            let new_token = try_refresh_token(&state).await?;
+            client.deadman_status(&new_token).await?
+        }
+        other => other?,
+    };
+
+    Ok(DeadmanStatus {
+        enabled: resp.enabled,
+        inactivity_days: resp.inactivity_days,
+        last_seen_at: resp.last_seen_at,
+    })
+}
 
 /// Send a heartbeat to the server.
 #[tauri::command]

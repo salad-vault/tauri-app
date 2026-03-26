@@ -116,6 +116,7 @@ pub fn run() {
             sync::commands::sync_status,
             sync::commands::sync_push,
             sync::commands::sync_pull,
+            sync::commands::deadman_status,
             sync::commands::deadman_heartbeat,
             sync::commands::deadman_update_config,
             sync::commands::generate_recovery_kit,

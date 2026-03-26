@@ -712,6 +712,16 @@ pub fn t(key: &'static str, lang: Language) -> &'static str {
         ("general.kit_send_error", En) => "Error sending kit.",
         ("general.settings_sync_note", Fr) => "Les paramètres sont synchronisés avec le serveur.",
         ("general.settings_sync_note", En) => "Settings are synced with the server.",
+        ("general.deadman_last_seen", Fr) => "Dernière activité détectée",
+        ("general.deadman_last_seen", En) => "Last activity detected",
+        ("general.deadman_save", Fr) => "Enregistrer",
+        ("general.deadman_save", En) => "Save",
+        ("general.deadman_saving", Fr) => "Enregistrement...",
+        ("general.deadman_saving", En) => "Saving...",
+        ("general.deadman_saved", Fr) => "Dead Man's Switch mis à jour.",
+        ("general.deadman_saved", En) => "Dead Man's Switch updated.",
+        ("general.deadman_recovery_hint", Fr) => "Mot de passe pour chiffrer le kit envoyé au destinataire. Ne le perdez pas.",
+        ("general.deadman_recovery_hint", En) => "Password to encrypt the kit sent to the recipient. Don't lose it.",
 
         // ── Sync (additional keys) ──
         ("sync.section_title", Fr) => "Synchronisation",
