@@ -334,7 +334,7 @@ pub fn Dashboard(
                 <div class="search-bar-container">
                     <input
                         class="search-bar"
-                        type="text"
+                        type="password"
                         placeholder=move || t("dash.search_placeholder", lang.get())
                         on:input=move |ev| {
                             set_search_query.set(event_target_value(&ev));
