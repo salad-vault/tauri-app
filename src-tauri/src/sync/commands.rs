@@ -413,53 +413,41 @@ pub async fn server_delete_account(
 
 // ── Email Verification ──
 
-#[derive(Deserialize)]
-pub struct SendVerificationArgs {
-    pub email: String,
-    #[serde(rename = "apiUrl")]
-    pub api_url: String,
-}
-
 /// Send a verification code to the user's email address.
 /// Called before server_register to verify email ownership.
 #[tauri::command]
 pub async fn server_send_verification(
-    args: SendVerificationArgs,
+    email: String,
+    api_url: String,
 ) -> Result<bool, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
-    let client = ApiClient::new(&args.api_url);
+    let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
+    let client = ApiClient::new(&api_url);
 
     let resp = client
         .send_verification_code(&crate::sync::client::SendVerificationCodeRequest {
             blind_id,
-            email: args.email,
+            email,
         })
         .await?;
 
     Ok(resp.sent)
 }
 
-#[derive(Deserialize)]
-pub struct VerifyCodeArgs {
-    pub email: String,
-    pub code: String,
-    #[serde(rename = "apiUrl")]
-    pub api_url: String,
-}
-
 /// Verify the 6-digit code sent to the user's email.
 /// Must be called before server_register.
 #[tauri::command]
 pub async fn server_verify_code(
-    args: VerifyCodeArgs,
+    email: String,
+    code: String,
+    api_url: String,
 ) -> Result<bool, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
-    let client = ApiClient::new(&args.api_url);
+    let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
+    let client = ApiClient::new(&api_url);
 
     let resp = client
         .verify_code(&crate::sync::client::VerifyCodeRequest {
             blind_id,
-            code: args.code,
+            code,
         })
         .await?;
 

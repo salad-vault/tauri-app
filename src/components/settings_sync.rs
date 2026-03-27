@@ -702,7 +702,6 @@ pub fn SettingsSync() -> impl IntoView {
                         <div class="settings-group">
                             <h3>{move || t("sync.mfa_setup_title", lang.get())}</h3>
                             <p class="settings-hint">{move || t("sync.mfa_setup_hint", lang.get())}</p>
-                            <div class="mfa-qr-container" inner_html=move || mfa_qr_svg.get()></div>
                             <div class="settings-row">
                                 <label>{move || t("sync.manual_key", lang.get())}</label>
                                 <code class="mfa-secret-code">{move || mfa_secret_b32.get()}</code>
