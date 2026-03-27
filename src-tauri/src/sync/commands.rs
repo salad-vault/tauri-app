@@ -1,5 +1,5 @@
 use base64::Engine;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::State;
 
 use crate::crypto::{argon2_kdf, blind_index};
@@ -120,31 +120,24 @@ pub struct MfaChallengeInfo {
     pub mfa_challenge_token: String,
 }
 
-#[derive(Deserialize)]
-pub struct ServerRegisterArgs {
-    pub email: String,
-    #[serde(rename = "serverPassword")]
-    pub server_password: String,
-    #[serde(rename = "apiUrl")]
-    pub api_url: String,
-}
-
 /// Step 1: Register a new account on the SaladVault server.
-/// Returns MFA setup data (QR code, TOTP secret). No tokens yet.
+/// Returns MFA setup data (TOTP secret). No tokens yet.
 #[tauri::command]
 pub async fn server_register(
     state: State<'_, AppState>,
-    args: ServerRegisterArgs,
+    email: String,
+    server_password: String,
+    api_url: String,
 ) -> Result<MfaSetupInfo, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
+    let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
     let auth_salt = argon2_kdf::generate_salt();
-    let auth_hash = compute_server_auth(args.server_password, auth_salt.to_vec()).await?;
+    let auth_hash = compute_server_auth(server_password, auth_salt.to_vec()).await?;
 
     // Save API URL
     {
         let mut url = state.api_base_url.lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        *url = args.api_url;
+        *url = api_url;
     }
 
     let client = get_api_client(&state)?;
@@ -171,27 +164,20 @@ pub async fn server_register(
     })
 }
 
-#[derive(Deserialize)]
-pub struct MfaConfirmArgs {
-    #[serde(rename = "mfaSetupToken")]
-    pub mfa_setup_token: String,
-    #[serde(rename = "totpCode")]
-    pub totp_code: String,
-}
-
 /// Step 2: Confirm MFA setup with a TOTP code from the authenticator app.
 /// Completes registration and stores server tokens (in memory + persisted to disk).
 #[tauri::command]
 pub async fn server_register_confirm_mfa(
     state: State<'_, AppState>,
-    args: MfaConfirmArgs,
+    mfa_setup_token: String,
+    totp_code: String,
 ) -> Result<(), AppError> {
     let client = get_api_client(&state)?;
 
     let resp = client
         .mfa_setup_confirm(&MfaSetupConfirmRequest {
-            mfa_setup_token: args.mfa_setup_token,
-            totp_code: args.totp_code,
+            mfa_setup_token,
+            totp_code,
         })
         .await?;
 
@@ -223,29 +209,22 @@ pub async fn server_register_confirm_mfa(
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct ServerLoginArgs {
-    pub email: String,
-    #[serde(rename = "serverPassword")]
-    pub server_password: String,
-    #[serde(rename = "apiUrl")]
-    pub api_url: String,
-}
-
 /// Step 1: Log into the SaladVault server.
 /// Returns an MFA challenge token. No JWT tokens yet.
 #[tauri::command]
 pub async fn server_login(
     state: State<'_, AppState>,
-    args: ServerLoginArgs,
+    email: String,
+    server_password: String,
+    api_url: String,
 ) -> Result<MfaChallengeInfo, AppError> {
-    let blind_id = blind_index::compute_blind_index(&args.email, EMAIL_BLIND_INDEX_SALT)?;
+    let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
 
     // Save API URL
     {
         let mut url = state.api_base_url.lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        *url = args.api_url;
+        *url = api_url;
     }
 
     let client = get_api_client(&state)?;
@@ -257,7 +236,7 @@ pub async fn server_login(
         .map_err(|_| AppError::Internal("Invalid salt from server".to_string()))?;
 
     // Compute auth_hash with the server's salt
-    let auth_hash = compute_server_auth(args.server_password, auth_salt).await?;
+    let auth_hash = compute_server_auth(server_password, auth_salt).await?;
 
     let resp = client
         .login(&LoginRequest {
@@ -271,27 +250,20 @@ pub async fn server_login(
     })
 }
 
-#[derive(Deserialize)]
-pub struct MfaVerifyArgs {
-    #[serde(rename = "mfaChallengeToken")]
-    pub mfa_challenge_token: String,
-    #[serde(rename = "totpCode")]
-    pub totp_code: String,
-}
-
 /// Step 2: Verify TOTP code to complete login.
 /// Stores server tokens on success (in memory + persisted to disk).
 #[tauri::command]
 pub async fn server_login_verify_mfa(
     state: State<'_, AppState>,
-    args: MfaVerifyArgs,
+    mfa_challenge_token: String,
+    totp_code: String,
 ) -> Result<(), AppError> {
     let client = get_api_client(&state)?;
 
     let resp = client
         .mfa_verify(&MfaVerifyRequest {
-            mfa_challenge_token: args.mfa_challenge_token,
-            totp_code: args.totp_code,
+            mfa_challenge_token,
+            totp_code,
         })
         .await?;
 
@@ -365,24 +337,18 @@ pub async fn server_is_connected(state: State<'_, AppState>) -> Result<bool, App
 
 // ── Account Deletion ──
 
-#[derive(Deserialize)]
-pub struct DeleteAccountArgs {
-    #[serde(rename = "totpCode")]
-    pub totp_code: String,
-}
-
 /// Delete the server account. Requires a valid TOTP code.
 /// Clears local server auth data after successful deletion.
 #[tauri::command]
 pub async fn server_delete_account(
     state: State<'_, AppState>,
-    args: DeleteAccountArgs,
+    totp_code: String,
 ) -> Result<(), AppError> {
     let token = get_access_token(&state)?;
     let client = get_api_client(&state)?;
 
     let req = crate::sync::client::DeleteAccountRequest {
-        totp_code: args.totp_code.clone(),
+        totp_code,
     };
 
     // Try with current token, refresh if needed
@@ -594,30 +560,23 @@ pub async fn deadman_heartbeat(state: State<'_, AppState>) -> Result<(), AppErro
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct DeadmanConfigArgs {
-    pub enabled: bool,
-    pub days: u32,
-    #[serde(rename = "recipientEmail")]
-    pub recipient_email: String,
-    #[serde(rename = "recoveryBlob")]
-    pub recovery_blob: Option<String>,
-}
-
 /// Update the Dead Man's Switch configuration on the server.
 #[tauri::command]
 pub async fn deadman_update_config(
     state: State<'_, AppState>,
-    args: DeadmanConfigArgs,
+    enabled: bool,
+    days: u32,
+    recipient_email: String,
+    recovery_blob: Option<String>,
 ) -> Result<(), AppError> {
     let token = get_access_token(&state)?;
     let client = get_api_client(&state)?;
 
     let req = DeadmanConfigRequest {
-        enabled: args.enabled,
-        inactivity_days: args.days,
-        recipient_email: args.recipient_email,
-        recovery_blob_enc: args.recovery_blob,
+        enabled,
+        inactivity_days: days,
+        recipient_email,
+        recovery_blob_enc: recovery_blob,
     };
 
     match client.deadman_update_config(&token, &req).await {
@@ -690,21 +649,15 @@ pub async fn subscription_portal(
 
 // ── Recovery Kit commands ──
 
-#[derive(Deserialize)]
-pub struct GenerateRecoveryKitArgs {
-    #[serde(rename = "recoveryPassword")]
-    pub recovery_password: String,
-}
-
 /// Generate a recovery kit blob encrypted with the given recovery password.
 /// Returns the base64-encoded blob. The frontend is responsible for uploading
 /// it to the server via `deadman_update_config`.
 #[tauri::command]
 pub async fn generate_recovery_kit(
     state: State<'_, AppState>,
-    args: GenerateRecoveryKitArgs,
+    recovery_password: String,
 ) -> Result<String, AppError> {
-    if args.recovery_password.len() < 8 {
+    if recovery_password.len() < 8 {
         return Err(AppError::Internal(
             "Le mot de passe de secours doit contenir au moins 8 caractères".to_string(),
         ));
@@ -713,7 +666,7 @@ pub async fn generate_recovery_kit(
     let (_, master_key) = state.require_session()?;
     let conn = state.db.lock()
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    let blob = recovery::generate_recovery_blob(&conn, &master_key, &args.recovery_password)?;
+    let blob = recovery::generate_recovery_blob(&conn, &master_key, &recovery_password)?;
 
     Ok(blob)
 }

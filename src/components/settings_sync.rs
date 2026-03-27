@@ -95,7 +95,7 @@ pub fn SettingsSync() -> impl IntoView {
     let (connected, set_connected) = signal(false);
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
-    let (api_url, set_api_url) = signal("https://api.saladvault.com".to_string());
+    let (api_url, set_api_url) = signal("https://api.saladvault.app".to_string());
     let (error_msg, set_error_msg) = signal(String::new());
     let (success_msg, set_success_msg) = signal(String::new());
     let (loading, set_loading) = signal(false);
@@ -782,7 +782,7 @@ pub fn SettingsSync() -> impl IntoView {
                                 <input
                                     type="url"
                                     class="settings-input"
-                                    placeholder="https://api.saladvault.com"
+                                    placeholder="https://api.saladvault.app"
                                     prop:value=move || api_url.get()
                                     on:input=move |ev| set_api_url.set(event_target_value(&ev))
                                 />
