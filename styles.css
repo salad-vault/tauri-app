@@ -1498,6 +1498,35 @@ textarea {
   cursor: default;
 }
 
+.pricing-btn-upgrade {
+  background: var(--accent-green);
+  color: #ffffff;
+  border: 1px solid var(--accent-green);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.pricing-btn-upgrade:hover {
+  opacity: 0.85;
+}
+
+.pricing-btn-upgrade:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pricing-btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.pricing-btn-secondary:hover {
+  border-color: var(--accent-green);
+}
+
 .pricing-btn-soon {
   background: var(--bg-tertiary);
   color: var(--text-muted);

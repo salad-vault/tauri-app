@@ -8,6 +8,9 @@ use crate::i18n::{t, Language};
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
     async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI_PLUGIN_OPENER__"], js_name = openUrl, catch)]
+    async fn open_url(url: &str) -> Result<JsValue, JsValue>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,9 +90,7 @@ pub fn SettingsSubscription() -> impl IntoView {
             match invoke("subscription_checkout", args_js).await {
                 Ok(url_js) => {
                     if let Some(url) = url_js.as_string() {
-                        let open_args = serde_json::json!({ "url": url });
-                        let open_js = serde_wasm_bindgen::to_value(&open_args).unwrap_or(JsValue::NULL);
-                        let _ = invoke("open_url", open_js).await;
+                        let _ = open_url(&url).await;
                     }
                 }
                 Err(e) => {
@@ -110,9 +111,7 @@ pub fn SettingsSubscription() -> impl IntoView {
             match invoke("subscription_portal", args_js).await {
                 Ok(url_js) => {
                     if let Some(url) = url_js.as_string() {
-                        let open_args = serde_json::json!({ "url": url });
-                        let open_js = serde_wasm_bindgen::to_value(&open_args).unwrap_or(JsValue::NULL);
-                        let _ = invoke("open_url", open_js).await;
+                        let _ = open_url(&url).await;
                     }
                 }
                 Err(e) => {
