@@ -1993,3 +1993,22 @@ textarea {
   color: var(--accent, #238636);
   font-weight: 600;
 }
+
+/* ── Pairing code display ── */
+
+.pairing-code-display {
+  text-align: center;
+  padding: 1.5rem;
+  background: var(--bg-primary, #0d1117);
+  border: 2px dashed var(--accent-green, #238636);
+  border-radius: 12px;
+  margin-top: 0.75rem;
+}
+
+.pairing-code {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  color: var(--accent-green, #238636);
+  font-family: "Courier New", monospace;
+}

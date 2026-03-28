@@ -11,6 +11,7 @@ use crate::components::settings_saladiers::SettingsSaladiers;
 use crate::components::settings_data::SettingsData;
 use crate::components::settings_privacy::SettingsPrivacy;
 use crate::components::settings_general::SettingsGeneral;
+use crate::components::settings_extension::SettingsExtension;
 use crate::components::settings_subscription::SettingsSubscription;
 use crate::components::settings_sync::SettingsSync;
 
@@ -103,6 +104,7 @@ enum SettingsTab {
     Privacy,
     General,
     Sync,
+    Extension,
     Subscription,
 }
 
@@ -231,6 +233,13 @@ pub fn Settings(
                         <span>{move || t("sync.title", lang.get())}</span>
                     </button>
                     <button
+                        class=move || if active_tab.get() == SettingsTab::Extension { "settings-nav-item active" } else { "settings-nav-item" }
+                        on:click=move |_| set_active_tab.set(SettingsTab::Extension)
+                    >
+                        <span class="nav-icon">"🧩"</span>
+                        <span>{move || t("settings.tab_extension", lang.get())}</span>
+                    </button>
+                    <button
                         class=move || if active_tab.get() == SettingsTab::Subscription { "settings-nav-item active" } else { "settings-nav-item" }
                         on:click=move |_| set_active_tab.set(SettingsTab::Subscription)
                     >
@@ -286,6 +295,11 @@ pub fn Settings(
                             SettingsTab::Sync => {
                                 view! {
                                     <SettingsSync />
+                                }.into_any()
+                            }
+                            SettingsTab::Extension => {
+                                view! {
+                                    <SettingsExtension />
                                 }.into_any()
                             }
                             SettingsTab::Subscription => {

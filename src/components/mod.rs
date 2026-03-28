@@ -11,6 +11,7 @@ pub mod saladier_view;
 pub mod settings;
 pub mod settings_data;
 pub mod settings_devices;
+pub mod settings_extension;
 pub mod settings_general;
 pub mod settings_keys;
 pub mod settings_privacy;
