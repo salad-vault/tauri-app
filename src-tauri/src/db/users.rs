@@ -11,8 +11,8 @@ pub fn create_user(conn: &Connection, user: &User) -> Result<(), AppError> {
     }
 
     conn.execute(
-        "INSERT INTO users (id, salt_master, k_cloud_enc, recovery_confirmed) VALUES (?1, ?2, ?3, ?4)",
-        params![user.id, user.salt_master, user.k_cloud_enc, user.recovery_confirmed as i32],
+        "INSERT INTO users (id, salt_master, k_cloud_enc, recovery_confirmed, salt_sync) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![user.id, user.salt_master, user.k_cloud_enc, user.recovery_confirmed as i32, user.salt_sync],
     )?;
 
     Ok(())
@@ -21,7 +21,7 @@ pub fn create_user(conn: &Connection, user: &User) -> Result<(), AppError> {
 /// Get a user by their blind index ID.
 pub fn get_user(conn: &Connection, user_id: &str) -> Result<User, AppError> {
     conn.query_row(
-        "SELECT id, salt_master, k_cloud_enc, recovery_confirmed FROM users WHERE id = ?1",
+        "SELECT id, salt_master, k_cloud_enc, recovery_confirmed, salt_sync FROM users WHERE id = ?1",
         params![user_id],
         |row| {
             let confirmed: i32 = row.get(3)?;
@@ -30,6 +30,7 @@ pub fn get_user(conn: &Connection, user_id: &str) -> Result<User, AppError> {
                 salt_master: row.get(1)?,
                 k_cloud_enc: row.get(2)?,
                 recovery_confirmed: confirmed != 0,
+                salt_sync: row.get(4)?,
             })
         },
     )
@@ -37,6 +38,18 @@ pub fn get_user(conn: &Connection, user_id: &str) -> Result<User, AppError> {
         rusqlite::Error::QueryReturnedNoRows => AppError::UserNotFound,
         other => AppError::Database(other),
     })
+}
+
+/// Update the sync salt for a user (migration for existing users).
+pub fn set_salt_sync(conn: &Connection, user_id: &str, salt_sync: &[u8]) -> Result<(), AppError> {
+    let affected = conn.execute(
+        "UPDATE users SET salt_sync = ?1 WHERE id = ?2",
+        params![salt_sync, user_id],
+    )?;
+    if affected == 0 {
+        return Err(AppError::UserNotFound);
+    }
+    Ok(())
 }
 
 /// Update the recovery_confirmed flag for a user.

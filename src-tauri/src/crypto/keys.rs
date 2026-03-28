@@ -107,6 +107,43 @@ impl Zeroize for MasterKey {
     }
 }
 
+/// Derive the Sync Key from the master password and a sync-specific salt.
+/// Unlike master_key, this does NOT involve device_key or HKDF,
+/// making it identical across all devices for the same password.
+///
+///   sync_key = Argon2id(password, salt_sync)
+///
+pub fn derive_sync_key(
+    master_password: &[u8],
+    salt_sync: &[u8],
+) -> Result<SyncKey, AppError> {
+    let derived = argon2_kdf::derive_key(master_password, salt_sync)?;
+    Ok(SyncKey { inner: derived })
+}
+
+/// A wrapper around the 32-byte sync key that zeroizes on drop.
+pub struct SyncKey {
+    inner: [u8; 32],
+}
+
+impl SyncKey {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.inner
+    }
+}
+
+impl Drop for SyncKey {
+    fn drop(&mut self) {
+        self.inner.zeroize();
+    }
+}
+
+impl Zeroize for SyncKey {
+    fn zeroize(&mut self) {
+        self.inner.zeroize();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

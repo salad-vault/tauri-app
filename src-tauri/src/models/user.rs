@@ -12,4 +12,6 @@ pub struct User {
     pub k_cloud_enc: Vec<u8>,
     /// Whether the user has confirmed saving their recovery phrase
     pub recovery_confirmed: bool,
+    /// Salt for sync key derivation (Argon2id without device_key)
+    pub salt_sync: Option<Vec<u8>>,
 }

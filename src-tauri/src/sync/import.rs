@@ -54,9 +54,11 @@ pub fn import_vault(
     for user in &payload.users {
         let salt = b64.decode(&user.salt_master).unwrap_or_default();
         let k_cloud = b64.decode(&user.k_cloud_enc).unwrap_or_default();
+        let salt_sync: Option<Vec<u8>> = user.salt_sync.as_ref()
+            .and_then(|s| b64.decode(s).ok());
         tx.execute(
-            "INSERT INTO users (id, salt_master, k_cloud_enc, recovery_confirmed) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![user.id, salt, k_cloud, user.recovery_confirmed],
+            "INSERT INTO users (id, salt_master, k_cloud_enc, recovery_confirmed, salt_sync) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![user.id, salt, k_cloud, user.recovery_confirmed, salt_sync],
         )?;
     }
 

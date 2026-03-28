@@ -12,11 +12,17 @@ pub struct Session {
     pub user_id: String,
     /// The reconstructed master key bytes (zeroized on drop)
     pub master_key_bytes: [u8; 32],
+    /// The sync key bytes — device-independent, derived from password + salt_sync only.
+    /// None if the user has no salt_sync yet (pre-migration).
+    pub sync_key_bytes: Option<[u8; 32]>,
 }
 
 impl Session {
     pub fn zeroize(&mut self) {
         self.master_key_bytes.zeroize();
+        if let Some(ref mut sk) = self.sync_key_bytes {
+            sk.zeroize();
+        }
         self.user_id.clear();
     }
 }
@@ -84,6 +90,20 @@ impl AppState {
         match session.as_ref() {
             Some(s) => Ok((s.user_id.clone(), s.master_key_bytes)),
             None => Err(crate::error::AppError::PotagerLocked),
+        }
+    }
+
+    /// Get the sync key from the session. Returns an error if not available.
+    pub fn require_sync_key(&self) -> Result<[u8; 32], crate::error::AppError> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+        match session.as_ref().and_then(|s| s.sync_key_bytes) {
+            Some(sk) => Ok(sk),
+            None => Err(crate::error::AppError::Internal(
+                "Sync key not available".to_string(),
+            )),
         }
     }
 

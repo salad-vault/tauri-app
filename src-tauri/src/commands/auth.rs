@@ -84,16 +84,18 @@ pub async fn register(
     }
 
     let salt_master = argon2_kdf::generate_salt();
+    let salt_sync = argon2_kdf::generate_salt();
 
-    // Reconstruct master key in a blocking thread
-    let pwd = master_password.into_bytes();
+    // Derive master key and sync key in parallel
+    let pwd_bytes = master_password.into_bytes();
+    let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let sm = salt_master;
-    let master_key = tokio::task::spawn_blocking(move || {
-        keys::reconstruct_master_key(&pwd, &dk, &sm)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+    let ss = salt_sync;
+    let mk_handle = tokio::task::spawn_blocking(move || keys::reconstruct_master_key(&pwd_bytes, &dk, &sm));
+    let sk_handle = tokio::task::spawn_blocking(move || keys::derive_sync_key(&pwd_for_sync, &ss));
+    let master_key: keys::MasterKey = mk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+    let sync_key: keys::SyncKey = sk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
 
     let verification_data = b"SALADVAULT_VERIFIED";
     let (nonce, ciphertext) = xchacha::encrypt(master_key.as_bytes(), verification_data)?;
@@ -106,6 +108,7 @@ pub async fn register(
         salt_master: salt_master.to_vec(),
         k_cloud_enc,
         recovery_confirmed: false,
+        salt_sync: Some(salt_sync.to_vec()),
     };
 
     // Persist device key only if it was freshly generated
@@ -123,6 +126,7 @@ pub async fn register(
         *session = Some(crate::state::Session {
             user_id,
             master_key_bytes: *master_key.as_bytes(),
+            sync_key_bytes: Some(*sync_key.as_bytes()),
         });
     }
 
@@ -165,15 +169,28 @@ pub async fn unlock(
         }
     };
 
-    // Reconstruct master key in a blocking thread (Argon2id is CPU-intensive)
-    let pwd = master_password.into_bytes();
+    // Reconstruct master key and sync key in parallel
+    let pwd_bytes = master_password.into_bytes();
+    let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let salt = user.salt_master.clone();
-    let master_key = tokio::task::spawn_blocking(move || {
-        keys::reconstruct_master_key(&pwd, &dk, &salt)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+
+    // Resolve salt_sync (generate if missing for migration)
+    let salt_sync_vec = match user.salt_sync.clone() {
+        Some(s) => s,
+        None => {
+            let new_salt = argon2_kdf::generate_salt();
+            let conn = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+            db::users::set_salt_sync(&conn, &user_id, &new_salt)?;
+            new_salt.to_vec()
+        }
+    };
+    let ss = salt_sync_vec;
+
+    let mk_handle = tokio::task::spawn_blocking(move || keys::reconstruct_master_key(&pwd_bytes, &dk, &salt));
+    let sk_handle = tokio::task::spawn_blocking(move || keys::derive_sync_key(&pwd_for_sync, &ss));
+    let master_key: keys::MasterKey = mk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+    let sync_key: keys::SyncKey = sk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
 
     // Verify by decrypting k_cloud_enc
     if user.k_cloud_enc.len() < 24 {
@@ -192,6 +209,7 @@ pub async fn unlock(
         *session = Some(crate::state::Session {
             user_id: user_id.clone(),
             master_key_bytes: *master_key.as_bytes(),
+            sync_key_bytes: Some(*sync_key.as_bytes()),
         });
     }
 
@@ -307,15 +325,27 @@ pub async fn change_master_password(
     // Generate new salt
     let new_salt = argon2_kdf::generate_salt();
 
-    // Derive new master key
-    let pwd = new_password.into_bytes();
+    // Get existing salt_sync
+    let salt_sync_vec = {
+        let conn = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+        let user = db::users::get_user(&conn, &user_id)?;
+        user.salt_sync.unwrap_or_else(|| {
+            let s = argon2_kdf::generate_salt();
+            let _ = db::users::set_salt_sync(&conn, &user_id, &s);
+            s.to_vec()
+        })
+    };
+
+    // Derive new master key and sync key in parallel
+    let pwd_bytes = new_password.into_bytes();
+    let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let salt = new_salt;
-    let new_master_key = tokio::task::spawn_blocking(move || {
-        keys::reconstruct_master_key(&pwd, &dk, &salt)
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+    let ss = salt_sync_vec;
+    let mk_handle = tokio::task::spawn_blocking(move || keys::reconstruct_master_key(&pwd_bytes, &dk, &salt));
+    let sk_handle = tokio::task::spawn_blocking(move || keys::derive_sync_key(&pwd_for_sync, &ss));
+    let new_master_key: keys::MasterKey = mk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
+    let new_sync_key: keys::SyncKey = sk_handle.await.map_err(|e| AppError::Internal(format!("Task join error: {e}")))??;
 
     // Re-encrypt k_cloud_enc
     let verification_data = b"SALADVAULT_VERIFIED";
@@ -385,6 +415,7 @@ pub async fn change_master_password(
         *session = Some(crate::state::Session {
             user_id,
             master_key_bytes: *new_master_key.as_bytes(),
+            sync_key_bytes: Some(*new_sync_key.as_bytes()),
         });
     }
 
@@ -453,6 +484,7 @@ mod tests {
             salt_master: salt.to_vec(),
             k_cloud_enc: k_cloud_enc.clone(),
             recovery_confirmed: false,
+            salt_sync: None,
         };
         db::users::create_user(&conn, &user).unwrap();
 
@@ -527,6 +559,7 @@ mod tests {
             salt_master: salt.to_vec(),
             k_cloud_enc,
             recovery_confirmed: false,
+            salt_sync: None,
         };
         db::users::create_user(&conn, &user).unwrap();
 

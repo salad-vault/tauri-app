@@ -75,6 +75,9 @@ pub fn initialize(conn: &Connection) -> Result<(), AppError> {
     let _ = conn.execute_batch(
         "ALTER TABLE users ADD COLUMN recovery_confirmed INTEGER NOT NULL DEFAULT 0;",
     );
+    let _ = conn.execute_batch(
+        "ALTER TABLE users ADD COLUMN salt_sync BLOB;",
+    );
 
     Ok(())
 }

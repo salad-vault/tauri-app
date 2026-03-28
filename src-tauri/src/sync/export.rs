@@ -22,6 +22,8 @@ pub struct UserRow {
     pub salt_master: String,   // base64
     pub k_cloud_enc: String,   // base64
     pub recovery_confirmed: i32,
+    #[serde(default)]
+    pub salt_sync: Option<String>, // base64, for multi-device sync
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,16 +58,18 @@ fn collect_payload(conn: &Connection) -> Result<SyncPayload, AppError> {
     let b64 = base64::engine::general_purpose::STANDARD;
 
     // Users
-    let mut stmt = conn.prepare("SELECT id, salt_master, k_cloud_enc, recovery_confirmed FROM users")?;
+    let mut stmt = conn.prepare("SELECT id, salt_master, k_cloud_enc, recovery_confirmed, salt_sync FROM users")?;
     let users: Vec<UserRow> = stmt
         .query_map([], |row| {
             let salt: Vec<u8> = row.get(1)?;
             let k_cloud: Vec<u8> = row.get(2)?;
+            let salt_sync: Option<Vec<u8>> = row.get(4)?;
             Ok(UserRow {
                 id: row.get(0)?,
                 salt_master: b64.encode(&salt),
                 k_cloud_enc: b64.encode(&k_cloud),
                 recovery_confirmed: row.get(3)?,
+                salt_sync: salt_sync.map(|s| b64.encode(&s)),
             })
         })?
         .filter_map(|r| r.ok())

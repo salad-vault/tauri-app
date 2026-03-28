@@ -458,12 +458,12 @@ pub async fn sync_push(state: State<'_, AppState>) -> Result<SyncStatus, AppErro
     };
     let new_version = server_status.version + 1;
 
-    // Export local DB as encrypted blob
-    let (_, master_key) = state.require_session()?;
+    // Export local DB as encrypted blob using sync_key (device-independent)
+    let sync_key = state.require_sync_key()?;
     let vault_blob = {
         let conn = state.db.lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        export::export_vault(&conn, &master_key)?
+        export::export_vault(&conn, &sync_key)?
     };
 
     let push_req = SyncPushRequest {
@@ -499,12 +499,14 @@ pub async fn sync_pull(state: State<'_, AppState>) -> Result<SyncStatus, AppErro
         other => other?,
     };
 
-    // Decrypt and import
+    // Decrypt and import — try sync_key first, fall back to master_key (legacy)
+    let sync_key = state.require_sync_key()?;
     let (_, master_key) = state.require_session()?;
     {
         let conn = state.db.lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        import::import_vault(&conn, &master_key, &resp.vault_blob)?;
+        import::import_vault(&conn, &sync_key, &resp.vault_blob)
+            .or_else(|_| import::import_vault(&conn, &master_key, &resp.vault_blob))?;
     }
 
     Ok(SyncStatus {

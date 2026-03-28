@@ -211,6 +211,7 @@ pub async fn regenerate_device_key(
         *session = Some(crate::state::Session {
             user_id,
             master_key_bytes: *new_master_key.as_bytes(),
+            sync_key_bytes: None, // sync_key needs password to re-derive; user must re-login
         });
     }
 
