@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod device;
 pub mod feuilles;
+pub mod files;
 pub mod import_export;
 pub mod maintenance;
 pub mod password_gen;

@@ -9,6 +9,48 @@ use crate::i18n::{t, Language};
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
     async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI_PLUGIN_DIALOG__"], js_name = open, catch)]
+    async fn dialog_open(options: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI_PLUGIN_DIALOG__"], js_name = save, catch)]
+    async fn dialog_save(options: JsValue) -> Result<JsValue, JsValue>;
+}
+
+// ── Helper: read a file via Tauri FS plugin ──
+async fn read_text_file(path: &str) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct ReadArgs {
+        path: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&ReadArgs {
+        path: path.to_string(),
+    })
+    .map_err(|e| e.to_string())?;
+    let result = invoke("read_text_file", args)
+        .await
+        .map_err(|e| e.as_string().unwrap_or_default())?;
+    result
+        .as_string()
+        .ok_or_else(|| "Failed to read file".to_string())
+}
+
+// ── Helper: write a file via Tauri FS plugin ──
+async fn write_text_file(path: &str, content: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct WriteArgs {
+        path: String,
+        content: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&WriteArgs {
+        path: path.to_string(),
+        content: content.to_string(),
+    })
+    .map_err(|e| e.to_string())?;
+    invoke("write_text_file", args)
+        .await
+        .map_err(|e| e.as_string().unwrap_or_default())?;
+    Ok(())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -27,6 +69,12 @@ pub fn SettingsData() -> impl IntoView {
     let (maintenance_msg, set_maintenance_msg) = signal(String::new());
     let (maintenance_loading, set_maintenance_loading) = signal(false);
 
+    // Export modal state
+    let (show_export_json_modal, set_show_export_json_modal) = signal(false);
+    let (show_export_csv_modal, set_show_export_csv_modal) = signal(false);
+    let (export_saladier, set_export_saladier) = signal(String::new());
+    let (export_password, set_export_password) = signal(String::new());
+
     // Load saladiers for import target selector
     {
         spawn_local(async move {
@@ -35,6 +83,7 @@ pub fn SettingsData() -> impl IntoView {
                 if let Ok(list) = serde_wasm_bindgen::from_value::<Vec<SaladierInfo>>(result) {
                     if let Some(first) = list.first() {
                         set_import_target.set(first.uuid.clone());
+                        set_export_saladier.set(first.uuid.clone());
                     }
                     set_saladiers.set(list);
                 }
@@ -82,6 +131,7 @@ pub fn SettingsData() -> impl IntoView {
         });
     };
 
+    // ── Import: open file picker, read file, send to backend ──
     let handle_import = move |source: &'static str| {
         let target = import_target.get_untracked();
         if target.is_empty() {
@@ -91,54 +141,198 @@ pub fn SettingsData() -> impl IntoView {
         set_import_msg.set(String::new());
         set_import_error.set(String::new());
 
+        let filter_name = match source {
+            "bitwarden" => "Bitwarden JSON",
+            "keepass" => "KeePass XML",
+            "chrome" => "Chrome CSV",
+            _ => "File",
+        };
+        let extensions: Vec<&str> = match source {
+            "bitwarden" => vec!["json"],
+            "keepass" => vec!["xml"],
+            "chrome" => vec!["csv"],
+            _ => vec!["*"],
+        };
+
         spawn_local(async move {
-            // Open file picker
+            // Open file picker via Tauri dialog plugin
+            let filter = serde_wasm_bindgen::to_value(&serde_json::json!({
+                "filters": [{
+                    "name": filter_name,
+                    "extensions": extensions
+                }],
+                "multiple": false
+            }))
+            .unwrap();
+
+            let path = match dialog_open(filter).await {
+                Ok(p) => match p.as_string() {
+                    Some(path) => path,
+                    None => return, // user cancelled
+                },
+                Err(_) => return,
+            };
+
+            // Read the file content
+            let file_data = match read_text_file(&path).await {
+                Ok(data) => data,
+                Err(e) => {
+                    set_import_error.set(format!("{}: {e}", t("data.error_prefix", lang.get())));
+                    return;
+                }
+            };
+
+            // Send to backend
             #[derive(Serialize)]
             struct ImportArgs {
                 #[serde(rename = "saladierUuid")]
                 saladier_uuid: String,
                 source: String,
+                #[serde(rename = "fileData")]
+                file_data: String,
             }
             let args = serde_wasm_bindgen::to_value(&ImportArgs {
                 saladier_uuid: target,
                 source: source.to_string(),
-            }).unwrap();
+                file_data,
+            })
+            .unwrap();
             match invoke("import_passwords", args).await {
-                Ok(_) => {
-                    set_import_msg.set(t("data.import_success", lang.get()).to_string());
+                Ok(count_js) => {
+                    let count = count_js.as_f64().unwrap_or(0.0) as u32;
+                    set_import_msg.set(format!(
+                        "{} ({count})",
+                        t("data.import_success", lang.get())
+                    ));
                 }
                 Err(err) => {
-                    set_import_error.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
+                    set_import_error.set(format!(
+                        "{}: {}",
+                        t("data.error_prefix", lang.get()),
+                        err.as_string().unwrap_or_default()
+                    ));
                 }
             }
         });
     };
 
-    let handle_export_json = move |_| {
+    // ── Export JSON: ask for saladier + password, encrypt and save ──
+    let handle_export_json_confirm = move |_| {
+        let sal_uuid = export_saladier.get_untracked();
+        let pwd = export_password.get_untracked();
+        if sal_uuid.is_empty() || pwd.is_empty() {
+            return;
+        }
+        set_show_export_json_modal.set(false);
+
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
+            // Get encrypted data from backend
+            #[derive(Serialize)]
+            struct ExportJsonArgs {
+                #[serde(rename = "saladierUuid")]
+                saladier_uuid: String,
+                #[serde(rename = "exportPassword")]
+                export_password: String,
+            }
+            let args = serde_wasm_bindgen::to_value(&ExportJsonArgs {
+                saladier_uuid: sal_uuid,
+                export_password: pwd,
+            })
+            .unwrap();
+
             match invoke("export_encrypted_json", args).await {
-                Ok(_) => {
-                    set_maintenance_msg.set(t("data.export_json_done", lang.get()).to_string());
+                Ok(blob_js) => {
+                    if let Some(blob) = blob_js.as_string() {
+                        // Save file dialog
+                        let save_opts = serde_wasm_bindgen::to_value(&serde_json::json!({
+                            "filters": [{"name": "SaladVault Export", "extensions": ["svault"]}],
+                            "defaultPath": "saladier_export.svault"
+                        }))
+                        .unwrap();
+
+                        if let Ok(path_js) = dialog_save(save_opts).await {
+                            if let Some(path) = path_js.as_string() {
+                                match write_text_file(&path, &blob).await {
+                                    Ok(_) => set_maintenance_msg.set(
+                                        t("data.export_json_done", lang.get()).to_string(),
+                                    ),
+                                    Err(e) => set_maintenance_msg.set(format!(
+                                        "{}: {e}",
+                                        t("data.error_prefix", lang.get())
+                                    )),
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!(
+                        "{}: {}",
+                        t("data.error_prefix", lang.get()),
+                        err.as_string().unwrap_or_default()
+                    ));
                 }
             }
+            set_export_password.set(String::new());
         });
     };
 
-    let handle_export_csv = move |_| {
+    // ── Export CSV: ask for saladier + master password, save ──
+    let handle_export_csv_confirm = move |_| {
+        let sal_uuid = export_saladier.get_untracked();
+        let pwd = export_password.get_untracked();
+        if sal_uuid.is_empty() || pwd.is_empty() {
+            return;
+        }
+        set_show_export_csv_modal.set(false);
+
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
+            #[derive(Serialize)]
+            struct ExportCsvArgs {
+                #[serde(rename = "saladierUuid")]
+                saladier_uuid: String,
+                #[serde(rename = "masterPassword")]
+                master_password: String,
+            }
+            let args = serde_wasm_bindgen::to_value(&ExportCsvArgs {
+                saladier_uuid: sal_uuid,
+                master_password: pwd,
+            })
+            .unwrap();
+
             match invoke("export_csv_clear", args).await {
-                Ok(_) => {
-                    set_maintenance_msg.set(t("data.export_csv_done", lang.get()).to_string());
+                Ok(csv_js) => {
+                    if let Some(csv_content) = csv_js.as_string() {
+                        let save_opts = serde_wasm_bindgen::to_value(&serde_json::json!({
+                            "filters": [{"name": "CSV", "extensions": ["csv"]}],
+                            "defaultPath": "saladier_export.csv"
+                        }))
+                        .unwrap();
+
+                        if let Ok(path_js) = dialog_save(save_opts).await {
+                            if let Some(path) = path_js.as_string() {
+                                match write_text_file(&path, &csv_content).await {
+                                    Ok(_) => set_maintenance_msg.set(
+                                        t("data.export_csv_done", lang.get()).to_string(),
+                                    ),
+                                    Err(e) => set_maintenance_msg.set(format!(
+                                        "{}: {e}",
+                                        t("data.error_prefix", lang.get())
+                                    )),
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(err) => {
-                    set_maintenance_msg.set(format!("{}: {}", t("data.error_prefix", lang.get()), err.as_string().unwrap_or_default()));
+                    set_maintenance_msg.set(format!(
+                        "{}: {}",
+                        t("data.error_prefix", lang.get()),
+                        err.as_string().unwrap_or_default()
+                    ));
                 }
             }
+            set_export_password.set(String::new());
         });
     };
 
@@ -169,19 +363,19 @@ pub fn SettingsData() -> impl IntoView {
                         let handle_import = handle_import.clone();
                         move |_| handle_import("bitwarden")
                     }>
-                        "📥 Bitwarden (JSON)"
+                        "Bitwarden (JSON)"
                     </button>
                     <button class="btn btn-ghost btn-sm" on:click={
                         let handle_import = handle_import.clone();
                         move |_| handle_import("keepass")
                     }>
-                        "📥 KeePass (XML)"
+                        "KeePass (XML)"
                     </button>
                     <button class="btn btn-ghost btn-sm" on:click={
                         let handle_import = handle_import.clone();
                         move |_| handle_import("chrome")
                     }>
-                        "📥 Chrome (CSV)"
+                        "Chrome (CSV)"
                     </button>
                 </div>
                 {move || {
@@ -201,15 +395,118 @@ pub fn SettingsData() -> impl IntoView {
             <div class="settings-group">
                 <h3>{move || t("data.export_title", lang.get())}</h3>
                 <div class="import-buttons">
-                    <button class="btn btn-ghost btn-sm" on:click=handle_export_json>
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        on:click=move |_| {
+                            set_export_password.set(String::new());
+                            set_show_export_json_modal.set(true);
+                        }
+                    >
                         {move || t("data.export_encrypted", lang.get())}
                     </button>
-                    <button class="btn btn-ghost btn-danger btn-sm" on:click=handle_export_csv>
+                    <button
+                        class="btn btn-ghost btn-danger btn-sm"
+                        on:click=move |_| {
+                            set_export_password.set(String::new());
+                            set_show_export_csv_modal.set(true);
+                        }
+                    >
                         {move || t("data.export_csv", lang.get())}
                     </button>
                 </div>
                 <p class="settings-hint settings-hint-danger">{move || t("data.export_csv_warn", lang.get())}</p>
             </div>
+
+            // Export JSON modal
+            <Show when=move || show_export_json_modal.get()>
+                <div class="modal-overlay">
+                    <div class="modal-box">
+                        <h3>{move || t("data.export_encrypted", lang.get())}</h3>
+                        <div class="settings-row">
+                            <label>{move || t("data.target_saladier", lang.get())}</label>
+                            <select
+                                class="settings-select"
+                                on:change=move |ev| set_export_saladier.set(event_target_value(&ev))
+                            >
+                                {move || {
+                                    saladiers.get().into_iter().map(|s| {
+                                        let uuid = s.uuid.clone();
+                                        view! { <option value={uuid}>{s.name}</option> }
+                                    }).collect::<Vec<_>>()
+                                }}
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label>{move || t("data.export_password", lang.get())}</label>
+                            <input
+                                type="password"
+                                class="settings-input"
+                                placeholder=move || t("data.export_password_hint", lang.get())
+                                prop:value=move || export_password.get()
+                                on:input=move |ev| set_export_password.set(event_target_value(&ev))
+                            />
+                        </div>
+                        <div class="import-buttons">
+                            <button
+                                class="btn btn-primary btn-sm"
+                                disabled=move || export_password.get().is_empty()
+                                on:click=handle_export_json_confirm
+                            >
+                                {move || t("data.export_confirm", lang.get())}
+                            </button>
+                            <button class="btn btn-ghost btn-sm" on:click=move |_| set_show_export_json_modal.set(false)>
+                                {move || t("cancel", lang.get())}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
+            // Export CSV modal
+            <Show when=move || show_export_csv_modal.get()>
+                <div class="modal-overlay">
+                    <div class="modal-box">
+                        <h3>{move || t("data.export_csv", lang.get())}</h3>
+                        <p class="settings-hint settings-hint-danger">{move || t("data.export_csv_warn", lang.get())}</p>
+                        <div class="settings-row">
+                            <label>{move || t("data.target_saladier", lang.get())}</label>
+                            <select
+                                class="settings-select"
+                                on:change=move |ev| set_export_saladier.set(event_target_value(&ev))
+                            >
+                                {move || {
+                                    saladiers.get().into_iter().map(|s| {
+                                        let uuid = s.uuid.clone();
+                                        view! { <option value={uuid}>{s.name}</option> }
+                                    }).collect::<Vec<_>>()
+                                }}
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <label>{move || t("data.master_password", lang.get())}</label>
+                            <input
+                                type="password"
+                                class="settings-input"
+                                placeholder=move || t("data.master_password_hint", lang.get())
+                                prop:value=move || export_password.get()
+                                on:input=move |ev| set_export_password.set(event_target_value(&ev))
+                            />
+                        </div>
+                        <div class="import-buttons">
+                            <button
+                                class="btn btn-primary btn-danger btn-sm"
+                                disabled=move || export_password.get().is_empty()
+                                on:click=handle_export_csv_confirm
+                            >
+                                {move || t("data.export_confirm", lang.get())}
+                            </button>
+                            <button class="btn btn-ghost btn-sm" on:click=move |_| set_show_export_csv_modal.set(false)>
+                                {move || t("cancel", lang.get())}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
 
             // Maintenance section
             <div class="settings-group">

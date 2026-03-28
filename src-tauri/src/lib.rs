@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use tauri::Manager;
 
-use crate::commands::{auth, device, feuilles, import_export, maintenance, password_gen, recovery, saladiers, settings};
+use crate::commands::{auth, device, feuilles, files, import_export, maintenance, password_gen, recovery, saladiers, settings};
 use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -98,6 +98,9 @@ pub fn run() {
             settings::clear_clipboard,
             settings::update_last_activity,
             settings::get_inactivity_seconds,
+            // File commands
+            files::read_text_file,
+            files::write_text_file,
             // Import/Export commands
             import_export::import_passwords,
             import_export::export_encrypted_json,
