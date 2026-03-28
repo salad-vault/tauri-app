@@ -1,3 +1,4 @@
+pub mod bridge;
 pub mod feuilles;
 pub mod saladiers;
 pub mod schema;

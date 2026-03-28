@@ -1,3 +1,4 @@
+mod bridge;
 mod commands;
 pub mod crypto;
 mod db;
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 
 use tauri::Manager;
 
-use crate::commands::{auth, device, feuilles, files, import_export, maintenance, password_gen, recovery, saladiers, settings};
+use crate::commands::{auth, bridge as bridge_cmds, device, feuilles, files, import_export, maintenance, password_gen, recovery, saladiers, settings};
 use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,7 +47,22 @@ pub fn run() {
             };
 
             let app_state = AppState::new(conn, data_dir);
+
+            // Load persisted bridge token
+            if let Ok(c) = app_state.db.lock() {
+                if let Ok(Some(token)) = db::bridge::get_bridge_token(&c) {
+                    let mut t = app_state.bridge_token.lock().unwrap();
+                    *t = Some(token);
+                }
+            }
+
             app.manage(app_state);
+
+            // Start WebSocket bridge for browser extension
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                bridge::start(handle).await;
+            });
 
             // Apply screenshot protection by default (desktop only)
             #[cfg(not(mobile))]
@@ -112,6 +128,10 @@ pub fn run() {
             maintenance::install_update,
             // Password generator
             password_gen::generate_password,
+            // Bridge commands
+            bridge_cmds::generate_pairing_code,
+            bridge_cmds::get_bridge_status,
+            bridge_cmds::revoke_bridge_token,
             // Sync commands
             sync::commands::server_register,
             sync::commands::server_register_confirm_mfa,

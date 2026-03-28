@@ -63,7 +63,11 @@ quick-xml = "0.36"
 base64 = "0.22"
 
 # Async
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt", "net", "macros"] }
+
+# WebSocket bridge for browser extension
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
 
 # Sync (server communication)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

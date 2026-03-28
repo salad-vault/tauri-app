@@ -55,6 +55,10 @@ pub struct AppState {
     pub server_tokens: Mutex<Option<ServerTokens>>,
     /// API server base URL
     pub api_base_url: Mutex<String>,
+    /// Active pairing code for browser extension (6 digits, short-lived)
+    pub bridge_pairing_code: Mutex<Option<String>>,
+    /// Persistent bridge token for authenticated extension connections
+    pub bridge_token: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -67,6 +71,8 @@ impl AppState {
             last_activity: Mutex::new(Instant::now()),
             server_tokens: Mutex::new(None),
             api_base_url: Mutex::new(String::new()),
+            bridge_pairing_code: Mutex::new(None),
+            bridge_token: Mutex::new(None),
         }
     }
 

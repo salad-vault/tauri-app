@@ -46,6 +46,12 @@ pub fn initialize(conn: &Connection) -> Result<(), AppError> {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        -- Bridge config: persistent key-value for browser extension pairing.
+        CREATE TABLE IF NOT EXISTS bridge_config (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         -- Server auth: persisted encrypted tokens for auto-reconnect.
         -- tokens_enc is encrypted with the user's master key (XChaCha20-Poly1305).
         CREATE TABLE IF NOT EXISTS server_auth (

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod bridge;
 pub mod device;
 pub mod feuilles;
 pub mod files;
