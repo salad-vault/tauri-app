@@ -36,6 +36,7 @@ zeroize = { version = "1", features = ["derive"] }
 
 # Database
 rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite_migration = "1"
 
 # Serialization
 uuid = { version = "1", features = ["v4", "serde"] }
