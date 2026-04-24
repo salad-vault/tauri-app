@@ -74,12 +74,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Auth commands
-            auth::register,
-            auth::unlock,
-            auth::lock,
-            auth::is_unlocked,
-            auth::verify_master_password,
-            auth::change_master_password,
+            auth::register_cmd::register,
+            auth::session::unlock,
+            auth::session::lock,
+            auth::session::is_unlocked,
+            auth::session::verify_master_password,
+            auth::account::change_master_password,
             // Device commands
             device::init_device_key,
             device::check_device_key,
