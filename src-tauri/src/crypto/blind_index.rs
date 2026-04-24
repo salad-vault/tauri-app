@@ -6,9 +6,16 @@ use crate::error::AppError;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Compile-time seed for blind index PEPPER derivation.
+/// Compile-time seed for blind index derivation.
+///
+/// **Not a secret in open-source builds**: this value is visible in the public source tree, so it
+/// cannot protect against an attacker who has both the source code and the server database.
+/// It still provides domain separation and prevents naive `HMAC(email, "")` collisions with other
+/// services. See `SECURITY.md` (section "Limites connues du modele Zero-Knowledge en open-source").
+///
 /// Used directly for server-side blind indexing (cross-device deterministic)
-/// and as HKDF input material for local blind indexing (device-specific).
+/// and as HKDF input material for local blind indexing (device-specific, where the real entropy
+/// comes from the per-device `device_key`).
 const PEPPER_SEED: &[u8] = b"SaladVault_BlindIndex_Pepper_v1";
 
 /// Domain-separation salt for email blind indexing.
