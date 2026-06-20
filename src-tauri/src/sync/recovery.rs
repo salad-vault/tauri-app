@@ -1,5 +1,6 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{argon2_kdf, xchacha};
 use crate::error::AppError;
@@ -40,19 +41,25 @@ pub fn generate_recovery_blob(
         .map_err(|e| AppError::Internal(format!("Deserialization error: {e}")))?;
 
     // 2. Build recovery payload with master key included
-    let recovery_payload = RecoveryPayload {
+    let mut recovery_payload = RecoveryPayload {
         master_key_hex: hex::encode(master_key),
         vault,
     };
-    let payload_json = serde_json::to_vec(&recovery_payload)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
+    // SV-M10: the serialized buffer holds the plaintext master key; wipe it on drop.
+    let payload_json = Zeroizing::new(
+        serde_json::to_vec(&recovery_payload)
+            .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?,
+    );
+    // SV-M10: wipe the hex master key now that it has been serialized.
+    recovery_payload.master_key_hex.zeroize();
 
     // 3. Derive a recovery key from the password
     let salt = argon2_kdf::generate_salt();
-    let recovery_key = argon2_kdf::derive_key(recovery_password.as_bytes(), &salt)?;
+    let mut recovery_key = argon2_kdf::derive_key(recovery_password.as_bytes(), &salt)?;
 
     // 4. Encrypt the payload with the recovery key
     let (nonce, ciphertext) = xchacha::encrypt(&recovery_key, &payload_json)?;
+    recovery_key.zeroize(); // SV-M10
 
     // 5. Pack: salt (32) || nonce (24) || ciphertext
     let mut packed = Vec::with_capacity(32 + nonce.len() + ciphertext.len());

@@ -113,13 +113,7 @@ pub async fn unlock(
 /// Lock the Potager.
 #[tauri::command]
 pub async fn lock(state: State<'_, AppState>) -> Result<(), AppError> {
-    state.clear_saladier_keys();
-
-    let mut session = state.session.lock().map_err(|e| AppError::Internal(e.to_string()))?;
-    if let Some(ref mut s) = *session {
-        s.zeroize();
-    }
-    *session = None;
+    state.lock_now();
     Ok(())
 }
 

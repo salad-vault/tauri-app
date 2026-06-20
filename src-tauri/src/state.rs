@@ -60,6 +60,10 @@ pub struct AppState {
     pub bridge_pairing_code: Mutex<Option<(String, Instant)>>,
     /// Persistent bridge token for authenticated extension connections
     pub bridge_token: Mutex<Option<String>>,
+    /// Server-enforced auto-lock timeout in seconds (0 = disabled). Mirrors the
+    /// user's setting; a background task locks the session when idle beyond it,
+    /// so a frozen/dead webview cannot leave the vault unlocked (SV-M6).
+    pub auto_lock_secs: Mutex<u64>,
 }
 
 impl AppState {
@@ -74,6 +78,55 @@ impl AppState {
             api_base_url: Mutex::new(String::new()),
             bridge_pairing_code: Mutex::new(None),
             bridge_token: Mutex::new(None),
+            // Default to 5 minutes (matches AutoLockTimeout::After5Min) until the
+            // user's real setting is loaded.
+            auto_lock_secs: Mutex::new(300),
+        }
+    }
+
+    /// Update the server-enforced auto-lock timeout (seconds; 0 disables it).
+    pub fn set_auto_lock_secs(&self, secs: u64) {
+        if let Ok(mut g) = self.auto_lock_secs.lock() {
+            *g = secs;
+        }
+    }
+
+    /// Zeroize and drop the current session and clear the Saladier key cache.
+    /// Shared by the `lock` command and the auto-lock task (SV-M6).
+    pub fn lock_now(&self) {
+        self.clear_saladier_keys();
+        if let Ok(mut session) = self.session.lock() {
+            if let Some(ref mut s) = *session {
+                s.zeroize();
+            }
+            *session = None;
+        }
+    }
+
+    /// SV-M6: if a session is open and inactivity exceeds the configured
+    /// timeout, lock it. Returns true if it locked. Enforced server-side so a
+    /// frozen or dead webview cannot leave the vault unlocked indefinitely.
+    pub fn auto_lock_if_idle(&self) -> bool {
+        let timeout = match self.auto_lock_secs.lock() {
+            Ok(g) => *g,
+            Err(_) => return false,
+        };
+        if timeout == 0 {
+            return false; // disabled (Never / inactivity off)
+        }
+        let session_open = self.session.lock().map(|g| g.is_some()).unwrap_or(false);
+        if !session_open {
+            return false;
+        }
+        let idle = match self.last_activity.lock() {
+            Ok(g) => g.elapsed().as_secs(),
+            Err(_) => return false,
+        };
+        if idle >= timeout {
+            self.lock_now();
+            true
+        } else {
+            false
         }
     }
 

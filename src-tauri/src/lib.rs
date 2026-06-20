@@ -64,6 +64,20 @@ pub fn run() {
                 bridge::start(handle).await;
             });
 
+            // SV-M6: server-side auto-lock safety net. Independently of the
+            // frontend poll, this locks the session once inactivity exceeds the
+            // configured timeout, so a frozen or dead webview cannot leave the
+            // vault unlocked indefinitely.
+            let lock_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(10));
+                loop {
+                    interval.tick().await;
+                    lock_handle.state::<AppState>().auto_lock_if_idle();
+                }
+            });
+
             // Apply screenshot protection by default (desktop only)
             #[cfg(not(mobile))]
             if let Some(window) = app.get_webview_window("main") {

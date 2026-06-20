@@ -4,19 +4,38 @@ use tauri::State;
 
 use crate::db;
 use crate::error::AppError;
-use crate::models::settings::UserSettings;
+use crate::models::settings::{AutoLockTimeout, UserSettings};
 use crate::state::AppState;
+
+/// Map the user's auto-lock setting to a timeout in seconds (0 = disabled),
+/// used by the server-side auto-lock task (SV-M6).
+fn auto_lock_secs_from(s: &UserSettings) -> u64 {
+    if !s.auto_lock_on_inactivity {
+        return 0;
+    }
+    match s.auto_lock_timeout {
+        AutoLockTimeout::Never => 0,
+        AutoLockTimeout::Immediate => 15,
+        AutoLockTimeout::After1Min => 60,
+        AutoLockTimeout::After5Min => 300,
+    }
+}
 
 /// Get the current user's settings.
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<UserSettings, AppError> {
     let (user_id, _) = state.require_session()?;
 
-    let db_lock = state
-        .db
-        .lock()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    db::settings::get_settings(&db_lock, &user_id)
+    let settings = {
+        let db_lock = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        db::settings::get_settings(&db_lock, &user_id)?
+    };
+    // SV-M6: keep the server-side auto-lock timeout in sync with the user's setting.
+    state.set_auto_lock_secs(auto_lock_secs_from(&settings));
+    Ok(settings)
 }
 
 /// Save the current user's settings.
@@ -27,11 +46,16 @@ pub async fn save_settings(
 ) -> Result<(), AppError> {
     let (user_id, _) = state.require_session()?;
 
-    let db_lock = state
-        .db
-        .lock()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    db::settings::save_settings(&db_lock, &user_id, &settings)
+    {
+        let db_lock = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        db::settings::save_settings(&db_lock, &user_id, &settings)?;
+    }
+    // SV-M6: apply the (possibly changed) auto-lock timeout immediately.
+    state.set_auto_lock_secs(auto_lock_secs_from(&settings));
+    Ok(())
 }
 
 /// Apply screenshot protection dynamically.
