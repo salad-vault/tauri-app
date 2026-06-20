@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use tauri::State;
+use zeroize::Zeroizing;
 
 use crate::crypto::{argon2_kdf, keys, xchacha};
 use crate::db;
@@ -96,8 +97,9 @@ pub async fn change_master_password(
         })
     };
 
-    // Derive new master key and sync key in parallel
-    let pwd_bytes = new_password.into_bytes();
+    // Derive new master key and sync key in parallel.
+    // SV-M3: Zeroizing wipes the new-password copies on drop (incl. after move).
+    let pwd_bytes = Zeroizing::new(new_password.into_bytes());
     let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let salt = new_salt;

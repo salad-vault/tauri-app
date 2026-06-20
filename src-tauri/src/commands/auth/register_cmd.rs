@@ -1,4 +1,5 @@
 use tauri::State;
+use zeroize::Zeroizing;
 
 use crate::crypto::blind_index::EMAIL_BLIND_INDEX_SALT;
 use crate::crypto::{argon2_kdf, blind_index, keys, xchacha};
@@ -37,8 +38,9 @@ pub async fn register(
     let salt_master = argon2_kdf::generate_salt();
     let salt_sync = argon2_kdf::generate_salt();
 
-    // Derive master key and sync key in parallel
-    let pwd_bytes = master_password.into_bytes();
+    // Derive master key and sync key in parallel.
+    // SV-M3: Zeroizing wipes the password copies on drop (incl. after move).
+    let pwd_bytes = Zeroizing::new(master_password.into_bytes());
     let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let sm = salt_master;

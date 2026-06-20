@@ -1,4 +1,5 @@
 use tauri::State;
+use zeroize::Zeroizing;
 
 use crate::crypto::blind_index::EMAIL_BLIND_INDEX_SALT;
 use crate::crypto::{argon2_kdf, blind_index, keys, xchacha};
@@ -42,8 +43,10 @@ pub async fn unlock(
         }
     };
 
-    // Reconstruct master key and sync key in parallel
-    let pwd_bytes = master_password.into_bytes();
+    // Reconstruct master key and sync key in parallel.
+    // SV-M3: wrap the password copies in Zeroizing so the heap buffers are wiped
+    // on drop (including after being moved into the spawn_blocking closures).
+    let pwd_bytes = Zeroizing::new(master_password.into_bytes());
     let pwd_for_sync = pwd_bytes.clone();
     let dk = device_key;
     let salt = user.salt_master.clone();
@@ -143,7 +146,7 @@ pub async fn verify_master_password_inner(
         db::users::get_user(&db_lock, &user_id)?
     };
 
-    let pwd = master_password.as_bytes().to_vec();
+    let pwd = Zeroizing::new(master_password.as_bytes().to_vec()); // SV-M3
     let dk = device_key;
     let salt = user.salt_master.clone();
     let master_key = tokio::task::spawn_blocking(move || {
