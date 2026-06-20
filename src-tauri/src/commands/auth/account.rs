@@ -164,8 +164,11 @@ pub async fn change_master_password(
                 cleanup_old_backups(&state.data_dir, 3);
             }
             Err(e) => {
-                // Transaction rolled back automatically on drop.
-                // Backup file is preserved for manual recovery.
+                // Transaction rolled back automatically on drop. Keep the
+                // just-made backup for manual recovery, but still prune older
+                // ones so repeated failures don't accumulate unbounded copies
+                // of the database (SV-L17). The newest backup is retained.
+                cleanup_old_backups(&state.data_dir, 3);
                 return Err(e);
             }
         }

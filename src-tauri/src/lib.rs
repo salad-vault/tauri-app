@@ -51,8 +51,11 @@ pub fn run() {
             // Load persisted bridge token
             if let Ok(c) = app_state.db.lock() {
                 if let Ok(Some(token)) = db::bridge::get_bridge_token(&c) {
-                    let mut t = app_state.bridge_token.lock().unwrap();
-                    *t = Some(token);
+                    // SV-L1: avoid .unwrap() on the lock, consistent with the
+                    // surrounding error handling.
+                    if let Ok(mut t) = app_state.bridge_token.lock() {
+                        *t = Some(token);
+                    }
                 }
             }
 

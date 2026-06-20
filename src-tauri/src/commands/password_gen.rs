@@ -73,8 +73,11 @@ pub async fn generate_password(
 
     match password_type.as_str() {
         "passphrase" => {
-            // Generate a passphrase with the specified number of words
-            let word_count = (length / 5).clamp(4, 12); // ~5 chars per word on average
+            // Generate a passphrase with the specified number of words.
+            // SV-L9: floor raised from 4 to 6 words. With this ~440-word list
+            // (~8.8 bits/word) that is ~53 bits minimum (was ~35), up to ~105
+            // bits at 12 words.
+            let word_count = (length / 5).clamp(6, 12); // ~5 chars per word on average
             let words: Vec<&str> = (0..word_count)
                 .map(|_| {
                     let idx = rng.gen_range(0..PASSPHRASE_WORDS.len());
