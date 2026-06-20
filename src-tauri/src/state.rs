@@ -55,8 +55,9 @@ pub struct AppState {
     pub server_tokens: Mutex<Option<ServerTokens>>,
     /// API server base URL
     pub api_base_url: Mutex<String>,
-    /// Active pairing code for browser extension (6 digits, short-lived)
-    pub bridge_pairing_code: Mutex<Option<String>>,
+    /// Active pairing code for the browser extension, with its creation time so
+    /// it can be expired after a real TTL (SV-H1). `None` when no code is active.
+    pub bridge_pairing_code: Mutex<Option<(String, Instant)>>,
     /// Persistent bridge token for authenticated extension connections
     pub bridge_token: Mutex<Option<String>>,
 }
