@@ -34,6 +34,16 @@ fn get_api_client(state: &AppState) -> Result<ApiClient, AppError> {
     Ok(ApiClient::new(&url))
 }
 
+/// Build an API client for a URL provided directly by the frontend — used before
+/// any server account exists (server discovery, email verification, registration).
+fn client_for(api_url: &str) -> Result<ApiClient, AppError> {
+    let url = api_url.trim();
+    if url.is_empty() {
+        return Err(AppError::Internal("URL du serveur non configurée".to_string()));
+    }
+    Ok(ApiClient::new(url))
+}
+
 fn get_access_token(state: &AppState) -> Result<String, AppError> {
     let tokens = state.server_tokens.lock()
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -101,6 +111,43 @@ async fn compute_server_auth(password: String, salt: Vec<u8>) -> Result<String, 
     })
     .await
     .map_err(|e| AppError::Internal(format!("Task join error: {e}")))?
+}
+
+// ── Server discovery (self-hosted) ──
+
+/// Public capabilities of a SaladVault server, as reported by `GET /server/info`.
+#[derive(Serialize)]
+pub struct ServerInfo {
+    pub version: String,
+    pub email_verification_required: bool,
+    pub deadman_switch_available: bool,
+}
+
+/// Query a server's capabilities before creating an account there. When
+/// `api_url` is empty/absent, the URL of the currently connected server is used.
+#[tauri::command]
+pub async fn server_info(
+    state: State<'_, AppState>,
+    api_url: Option<String>,
+) -> Result<ServerInfo, AppError> {
+    let client = match api_url.as_deref().map(str::trim) {
+        Some(url) if !url.is_empty() => client_for(url)?,
+        _ => get_api_client(&state)?,
+    };
+    let resp = client.server_info().await?;
+    Ok(ServerInfo {
+        version: resp.version,
+        email_verification_required: resp.email_verification_required,
+        deadman_switch_available: resp.deadman_switch_available,
+    })
+}
+
+/// URL of the server the current Potager is connected to (empty if none).
+#[tauri::command]
+pub async fn server_current_url(state: State<'_, AppState>) -> Result<String, AppError> {
+    let url = state.api_base_url.lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(url.clone())
 }
 
 // ── Auth commands ──
@@ -387,7 +434,7 @@ pub async fn server_send_verification(
     api_url: String,
 ) -> Result<bool, AppError> {
     let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
-    let client = ApiClient::new(&api_url);
+    let client = client_for(&api_url)?;
 
     let resp = client
         .send_verification_code(&crate::sync::client::SendVerificationCodeRequest {
@@ -408,7 +455,7 @@ pub async fn server_verify_code(
     api_url: String,
 ) -> Result<bool, AppError> {
     let blind_id = blind_index::compute_blind_index(&email, EMAIL_BLIND_INDEX_SALT)?;
-    let client = ApiClient::new(&api_url);
+    let client = client_for(&api_url)?;
 
     let resp = client
         .verify_code(&crate::sync::client::VerifyCodeRequest {
@@ -590,63 +637,6 @@ pub async fn deadman_update_config(
     };
 
     Ok(())
-}
-
-// ── Subscription commands ──
-
-/// Get the current subscription status.
-#[tauri::command]
-pub async fn subscription_status(
-    state: State<'_, AppState>,
-) -> Result<crate::sync::client::SubscriptionStatusResponse, AppError> {
-    let token = get_access_token(&state)?;
-    let client = get_api_client(&state)?;
-
-    match client.subscription_status(&token).await {
-        Err(AppError::ServerUnauthorized) => {
-            let new_token = try_refresh_token(&state).await?;
-            client.subscription_status(&new_token).await
-        }
-        other => other,
-    }
-}
-
-/// Create a Stripe Checkout session and return the URL.
-#[tauri::command]
-pub async fn subscription_checkout(
-    state: State<'_, AppState>,
-) -> Result<String, AppError> {
-    let token = get_access_token(&state)?;
-    let client = get_api_client(&state)?;
-
-    let resp = match client.subscription_checkout(&token).await {
-        Err(AppError::ServerUnauthorized) => {
-            let new_token = try_refresh_token(&state).await?;
-            client.subscription_checkout(&new_token).await?
-        }
-        other => other?,
-    };
-
-    Ok(resp.checkout_url)
-}
-
-/// Create a Stripe Customer Portal session and return the URL.
-#[tauri::command]
-pub async fn subscription_portal(
-    state: State<'_, AppState>,
-) -> Result<String, AppError> {
-    let token = get_access_token(&state)?;
-    let client = get_api_client(&state)?;
-
-    let resp = match client.subscription_portal(&token).await {
-        Err(AppError::ServerUnauthorized) => {
-            let new_token = try_refresh_token(&state).await?;
-            client.subscription_portal(&new_token).await?
-        }
-        other => other?,
-    };
-
-    Ok(resp.portal_url)
 }
 
 // ── Recovery Kit commands ──

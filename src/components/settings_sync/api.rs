@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 
-use super::types::{DeadmanStatus, SyncStatus};
+use super::types::{DeadmanStatus, ServerInfo, SyncStatus};
 
 #[wasm_bindgen]
 extern "C" {
@@ -35,6 +35,24 @@ pub(super) async fn load_deadman_status(
             set_enabled.set(status.enabled);
             set_days.set(status.inactivity_days);
             set_last_seen.set(status.last_seen_at);
+        }
+    }
+}
+
+/// Fetch the connected server's URL and capabilities (self-hosted servers may
+/// lack SMTP, in which case the Dead Man's Switch cannot deliver its email).
+pub(super) async fn load_server_info(
+    set_url: WriteSignal<String>,
+    set_dm_available: WriteSignal<bool>,
+) {
+    if let Ok(result) = invoke_empty("server_current_url").await {
+        if let Some(url) = result.as_string() {
+            set_url.set(url);
+        }
+    }
+    if let Ok(result) = invoke_empty("server_info").await {
+        if let Ok(info) = serde_wasm_bindgen::from_value::<ServerInfo>(result) {
+            set_dm_available.set(info.deadman_switch_available);
         }
     }
 }

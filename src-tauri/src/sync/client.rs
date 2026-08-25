@@ -146,24 +146,14 @@ pub struct VerifyCodeResponse {
     pub verified: bool,
 }
 
-// ── Subscription types ──
+// ── Server discovery types ──
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct SubscriptionStatusResponse {
-    pub plan: String,
-    pub status: String,
-    pub trial_end: Option<String>,
-    pub current_period_end: Option<String>,
-}
-
+/// Mirror of the API's `GET /server/info` payload.
 #[derive(Deserialize)]
-pub struct CheckoutSessionResponse {
-    pub checkout_url: String,
-}
-
-#[derive(Deserialize)]
-pub struct PortalSessionResponse {
-    pub portal_url: String,
+pub struct ServerInfoResponse {
+    pub version: String,
+    pub email_verification_required: bool,
+    pub deadman_switch_available: bool,
 }
 
 #[derive(Deserialize)]
@@ -486,16 +476,12 @@ impl ApiClient {
         }
     }
 
-    // ── Subscription ──
+    // ── Server discovery (public, no auth) ──
 
-    pub async fn subscription_status(
-        &self,
-        access_token: &str,
-    ) -> Result<SubscriptionStatusResponse, AppError> {
+    pub async fn server_info(&self) -> Result<ServerInfoResponse, AppError> {
         let resp = self
             .client
-            .get(self.url("/subscription/status"))
-            .bearer_auth(access_token)
+            .get(self.url("/server/info"))
             .send()
             .await
             .map_err(Self::network_error)?;
@@ -503,45 +489,7 @@ impl ApiClient {
         if resp.status().is_success() {
             resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
         } else {
-            Err(Self::extract_error(resp).await)
-        }
-    }
-
-    pub async fn subscription_checkout(
-        &self,
-        access_token: &str,
-    ) -> Result<CheckoutSessionResponse, AppError> {
-        let resp = self
-            .client
-            .post(self.url("/subscription/checkout"))
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(Self::network_error)?;
-
-        if resp.status().is_success() {
-            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
-        } else {
-            Err(Self::extract_error(resp).await)
-        }
-    }
-
-    pub async fn subscription_portal(
-        &self,
-        access_token: &str,
-    ) -> Result<PortalSessionResponse, AppError> {
-        let resp = self
-            .client
-            .post(self.url("/subscription/portal"))
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(Self::network_error)?;
-
-        if resp.status().is_success() {
-            resp.json().await.map_err(|e| AppError::Internal(e.to_string()))
-        } else {
-            Err(Self::extract_error(resp).await)
+            Err(Self::extract_auth_error(resp).await)
         }
     }
 
