@@ -51,8 +51,11 @@ pub fn run() {
             // Load persisted bridge token
             if let Ok(c) = app_state.db.lock() {
                 if let Ok(Some(token)) = db::bridge::get_bridge_token(&c) {
-                    let mut t = app_state.bridge_token.lock().unwrap();
-                    *t = Some(token);
+                    // SV-L1: avoid .unwrap() on the lock, consistent with the
+                    // surrounding error handling.
+                    if let Ok(mut t) = app_state.bridge_token.lock() {
+                        *t = Some(token);
+                    }
                 }
             }
 
@@ -62,6 +65,20 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 bridge::start(handle).await;
+            });
+
+            // SV-M6: server-side auto-lock safety net. Independently of the
+            // frontend poll, this locks the session once inactivity exceeds the
+            // configured timeout, so a frozen or dead webview cannot leave the
+            // vault unlocked indefinitely.
+            let lock_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(10));
+                loop {
+                    interval.tick().await;
+                    lock_handle.state::<AppState>().auto_lock_if_idle();
+                }
             });
 
             // Apply screenshot protection by default (desktop only)
@@ -74,12 +91,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // Auth commands
-            auth::register,
-            auth::unlock,
-            auth::lock,
-            auth::is_unlocked,
-            auth::verify_master_password,
-            auth::change_master_password,
+            auth::register_cmd::register,
+            auth::session::unlock,
+            auth::session::lock,
+            auth::session::is_unlocked,
+            auth::session::verify_master_password,
+            auth::account::change_master_password,
             // Device commands
             device::init_device_key,
             device::check_device_key,

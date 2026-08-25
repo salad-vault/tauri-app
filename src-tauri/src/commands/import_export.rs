@@ -262,6 +262,14 @@ pub async fn export_encrypted_json(
     state: State<'_, AppState>,
 ) -> Result<String, AppError> {
     let _ = state.require_session()?;
+
+    // SV-L13: enforce a minimum export password length, matching the recovery kit.
+    if export_password.len() < 8 {
+        return Err(AppError::Internal(
+            "Le mot de passe d'export doit contenir au moins 8 caractères".to_string(),
+        ));
+    }
+
     let k_s = get_saladier_key(&state, &saladier_uuid)?;
 
     let feuilles = {
@@ -343,9 +351,23 @@ pub async fn export_csv_clear(
 }
 
 fn escape_csv(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
+    // SV-L12: neutralize spreadsheet formula injection — a field starting with
+    // = + - @ (or tab / carriage return) gets a leading apostrophe so
+    // Excel/LibreOffice treat it as text rather than a formula.
+    let guarded = match s.chars().next() {
+        Some('=') | Some('+') | Some('-') | Some('@') | Some('\t') | Some('\r') => {
+            format!("'{s}")
+        }
+        _ => s.to_string(),
+    };
+
+    if guarded.contains(',')
+        || guarded.contains('"')
+        || guarded.contains('\n')
+        || guarded.contains('\r')
+    {
+        format!("\"{}\"", guarded.replace('"', "\"\""))
     } else {
-        s.to_string()
+        guarded
     }
 }

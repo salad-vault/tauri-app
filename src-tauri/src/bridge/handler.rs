@@ -11,10 +11,14 @@ use crate::state::AppState;
 
 use super::protocol::{Action, Request, Response};
 
+/// Max failed pairing attempts on a single connection before it is closed (SV-H1).
+const MAX_PAIR_ATTEMPTS: u32 = 5;
+
 /// Handle a single authenticated WebSocket connection.
 pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
     let (mut sink, mut stream) = ws.split();
     let mut authenticated = false;
+    let mut pair_attempts: u32 = 0;
 
     while let Some(Ok(msg)) = stream.next().await {
         let text = match msg {
@@ -27,7 +31,7 @@ pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
             Ok(r) => r,
             Err(e) => {
                 let resp = Response::err(None, format!("Invalid JSON: {e}"));
-                let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                 continue;
             }
         };
@@ -44,28 +48,46 @@ pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
                     if stored.as_deref() == Some(token.as_str()) {
                         authenticated = true;
                         let resp = Response::ok_empty(id);
-                        let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                        let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                     } else {
                         let resp = Response::err(id, "Invalid token");
-                        let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                        let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                     }
                     continue;
                 }
                 Action::Pair { code } => {
                     let state = app.state::<AppState>();
-                    let stored_code = state.bridge_pairing_code.lock().ok()
-                        .and_then(|c| c.clone());
-                    if stored_code.as_deref() == Some(code.as_str()) {
-                        // Generate persistent token
-                        let token = generate_token();
-                        {
-                            let mut t = state.bridge_token.lock().unwrap();
-                            *t = Some(token.clone());
+                    // Validate the pairing code: it must exist, be unexpired
+                    // (SV-H1), and match (case-insensitive, trimmed). Consume it
+                    // on success; purge it if expired. The lock guard is dropped
+                    // before any await below.
+                    let valid = match state.bridge_pairing_code.lock() {
+                        Ok(mut pc) => {
+                            // Evaluate against the borrowed code first (booleans
+                            // are Copy, so no borrow of `pc` survives), then mutate.
+                            let (present, expired, matches) = match pc.as_ref() {
+                                Some((stored, created)) => {
+                                    let expired = created.elapsed()
+                                        > std::time::Duration::from_secs(super::PAIRING_TTL_SECS);
+                                    let matches = !expired
+                                        && stored.trim().eq_ignore_ascii_case(code.trim());
+                                    (true, expired, matches)
+                                }
+                                None => (false, false, false),
+                            };
+                            // Consume on success, or purge an expired code.
+                            if present && (matches || expired) {
+                                *pc = None;
+                            }
+                            matches
                         }
-                        // Clear pairing code
-                        {
-                            let mut c = state.bridge_pairing_code.lock().unwrap();
-                            *c = None;
+                        Err(_) => false,
+                    };
+
+                    if valid {
+                        let token = generate_token();
+                        if let Ok(mut t) = state.bridge_token.lock() {
+                            *t = Some(token.clone());
                         }
                         // Persist token to DB
                         if let Ok(conn) = state.db.lock() {
@@ -73,10 +95,15 @@ pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
                         }
                         authenticated = true;
                         let resp = Response::ok(id, json!({ "token": token }));
-                        let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                        let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                     } else {
+                        pair_attempts += 1;
                         let resp = Response::err(id, "Invalid pairing code");
-                        let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                        let _ = sink.send(Message::Text(serialize_response(&resp))).await;
+                        if pair_attempts >= MAX_PAIR_ATTEMPTS {
+                            log::warn!("Bridge: too many failed pairing attempts; closing connection");
+                            break;
+                        }
                     }
                     continue;
                 }
@@ -84,12 +111,12 @@ pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
                     let state = app.state::<AppState>();
                     let unlocked = state.require_session().is_ok();
                     let resp = Response::ok(id, json!({ "unlocked": unlocked }));
-                    let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                    let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                     continue;
                 }
                 _ => {
                     let resp = Response::err(id, "Not authenticated");
-                    let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+                    let _ = sink.send(Message::Text(serialize_response(&resp))).await;
                     continue;
                 }
             }
@@ -97,7 +124,7 @@ pub async fn handle_connection(ws: WebSocketStream<TcpStream>, app: AppHandle) {
 
         // Authenticated — process all actions
         let resp = handle_action(&app, id.clone(), &req.action);
-        let _ = sink.send(Message::Text(serde_json::to_string(&resp).unwrap())).await;
+        let _ = sink.send(Message::Text(serialize_response(&resp))).await;
     }
 }
 
@@ -220,6 +247,14 @@ fn handle_action(app: &AppHandle, id: Option<String>, action: &Action) -> Respon
             Response::ok_empty(id)
         }
     }
+}
+
+/// Serialize a bridge response to JSON, falling back to a minimal error payload
+/// instead of panicking if serialization ever fails.
+fn serialize_response(resp: &Response) -> String {
+    serde_json::to_string(resp).unwrap_or_else(|_| {
+        r#"{"id":null,"ok":false,"error":"serialization error"}"#.to_string()
+    })
 }
 
 fn generate_token() -> String {

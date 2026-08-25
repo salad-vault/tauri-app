@@ -1,5 +1,6 @@
 use bip39::Mnemonic;
 use tauri::State;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::keys;
 use crate::db;
@@ -16,11 +17,12 @@ pub async fn generate_recovery_phrase(
     let _ = state.require_session()?;
 
     let device_key_path = state.device_key_path();
-    let device_key = keys::load_device_key(&device_key_path)?;
+    let mut device_key = keys::load_device_key(&device_key_path)?;
 
     // BIP39 mnemonic from 32 bytes (256 bits) = 24 words
     let mnemonic = Mnemonic::from_entropy(&device_key)
         .map_err(|e| AppError::Internal(format!("BIP39 error: {e}")))?;
+    device_key.zeroize(); // SV-M10: wipe the local device-key copy.
 
     Ok(mnemonic.to_string())
 }
@@ -36,7 +38,7 @@ pub async fn recover_from_phrase(
         .parse()
         .map_err(|e| AppError::Internal(format!("Invalid recovery phrase: {e}")))?;
 
-    let entropy = mnemonic.to_entropy();
+    let entropy = Zeroizing::new(mnemonic.to_entropy()); // SV-M10: wiped on drop
     if entropy.len() != 32 {
         return Err(AppError::Internal(
             "Recovery phrase does not produce a 32-byte key".to_string(),
@@ -47,7 +49,26 @@ pub async fn recover_from_phrase(
     device_key.copy_from_slice(&entropy);
 
     let device_key_path = state.device_key_path();
+
+    // SV-H5: if a device key already exists, back it up (timestamped) before
+    // overwriting. A valid-but-wrong BIP39 phrase would otherwise irreversibly
+    // destroy access to the existing local vault — the backup makes recovery
+    // reversible. (Verifying the candidate key against the account requires the
+    // master password, which is not available in this recovery flow.)
+    if device_key_path.exists() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let backup = device_key_path.with_file_name(format!("device_secret.key.bak-{ts}"));
+        std::fs::copy(&device_key_path, &backup).map_err(|e| {
+            AppError::Internal(format!("Cannot back up existing device key: {e}"))
+        })?;
+        log::warn!("Existing device key backed up before recovery overwrite");
+    }
+
     keys::save_device_key(&device_key, &device_key_path)?;
+    device_key.zeroize(); // SV-M10: wipe the local device-key copy.
 
     Ok(())
 }

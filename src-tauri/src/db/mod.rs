@@ -19,7 +19,7 @@ use crate::error::AppError;
 /// This provides Zero-Knowledge security: even if the DB file is stolen,
 /// all data_blob, name_enc fields are encrypted and unreadable.
 pub fn open_database(path: &Path) -> Result<Connection, AppError> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
 
     // Enable WAL mode for better concurrency
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -27,16 +27,16 @@ pub fn open_database(path: &Path) -> Result<Connection, AppError> {
     // Enable foreign keys
     conn.pragma_update(None, "foreign_keys", "ON")?;
 
-    // Initialize the schema
-    schema::initialize(&conn)?;
+    // Run versioned migrations (tracks progress via PRAGMA user_version)
+    schema::initialize(&mut conn)?;
 
     Ok(conn)
 }
 
 #[cfg(test)]
 pub fn open_test_database() -> Result<Connection, AppError> {
-    let conn = Connection::open_in_memory()?;
+    let mut conn = Connection::open_in_memory()?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    schema::initialize(&conn)?;
+    schema::initialize(&mut conn)?;
     Ok(conn)
 }

@@ -1,93 +1,17 @@
+mod api;
+mod types;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
+use serde::Serialize;
 
 use crate::i18n::{t, Language};
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
-    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
-}
-
-// ── Types ──
-
-#[derive(Serialize)]
-struct ServerAuthArgs {
-    email: String,
-    #[serde(rename = "serverPassword")]
-    server_password: String,
-    #[serde(rename = "apiUrl")]
-    api_url: String,
-}
-
-#[derive(Serialize)]
-struct MfaConfirmArgs {
-    #[serde(rename = "mfaSetupToken")]
-    mfa_setup_token: String,
-    #[serde(rename = "totpCode")]
-    totp_code: String,
-}
-
-#[derive(Serialize)]
-struct MfaVerifyArgs {
-    #[serde(rename = "mfaChallengeToken")]
-    mfa_challenge_token: String,
-    #[serde(rename = "totpCode")]
-    totp_code: String,
-}
-
-#[derive(Deserialize)]
-struct SyncStatus {
-    version: i64,
-    updated_at: String,
-}
-
-#[derive(Deserialize)]
-struct MfaSetupInfo {
-    mfa_setup_token: String,
-    totp_secret_base32: String,
-    #[allow(dead_code)]
-    totp_uri: String,
-    qr_svg: String,
-}
-
-#[derive(Deserialize)]
-struct MfaChallengeInfo {
-    mfa_challenge_token: String,
-}
-
-#[derive(Serialize)]
-struct SendVerificationArgs {
-    email: String,
-    #[serde(rename = "apiUrl")]
-    api_url: String,
-}
-
-#[derive(Serialize)]
-struct VerifyCodeArgs {
-    email: String,
-    code: String,
-    #[serde(rename = "apiUrl")]
-    api_url: String,
-}
-
-#[derive(Serialize)]
-struct DeleteAccountArgs {
-    #[serde(rename = "totpCode")]
-    totp_code: String,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum MfaPhase {
-    None,
-    EmailVerification,
-    Setup,
-    Challenge,
-}
-
-// ── Component ──
+use self::api::{invoke_empty, invoke_with, load_deadman_status, load_sync_status};
+use self::types::{
+    DeleteAccountArgs, MfaChallengeInfo, MfaConfirmArgs, MfaPhase, MfaSetupInfo, MfaVerifyArgs,
+    SendVerificationArgs, ServerAuthArgs, SyncStatus, VerifyCodeArgs,
+};
 
 #[component]
 pub fn SettingsSync() -> impl IntoView {
@@ -120,43 +44,36 @@ pub fn SettingsSync() -> impl IntoView {
     let (mfa_phase, set_mfa_phase) = signal(MfaPhase::None);
     let (mfa_setup_token, set_mfa_setup_token) = signal(String::new());
     let (mfa_challenge_token, set_mfa_challenge_token) = signal(String::new());
-    let (mfa_qr_svg, set_mfa_qr_svg) = signal(String::new());
+    let (_mfa_qr_svg, set_mfa_qr_svg) = signal(String::new());
     let (mfa_secret_b32, set_mfa_secret_b32) = signal(String::new());
     let (totp_code, set_totp_code) = signal(String::new());
 
     // Check connection on mount
-    {
-        spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
-            if let Ok(result) = invoke("server_is_connected", args).await {
-                if let Some(val) = result.as_bool() {
-                    set_connected.set(val);
-                    if val {
-                        load_sync_status(set_sync_version, set_sync_updated).await;
-                        load_deadman_status(set_dm_enabled, set_dm_days, set_dm_last_seen).await;
-                    }
+    spawn_local(async move {
+        if let Ok(result) = invoke_empty("server_is_connected").await {
+            if let Some(val) = result.as_bool() {
+                set_connected.set(val);
+                if val {
+                    load_sync_status(set_sync_version, set_sync_updated).await;
+                    load_deadman_status(set_dm_enabled, set_dm_days, set_dm_last_seen).await;
                 }
             }
-        });
-    }
+        }
+    });
 
     // ── Login step 1: credentials → MFA challenge ──
     let handle_login = move |_| {
         set_loading.set(true);
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
-        let e = email.get_untracked();
-        let p = password.get_untracked();
-        let u = api_url.get_untracked();
+        let payload = ServerAuthArgs {
+            email: email.get_untracked(),
+            server_password: password.get_untracked(),
+            api_url: api_url.get_untracked(),
+        };
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&ServerAuthArgs {
-                email: e,
-                server_password: p,
-                api_url: u,
-            })
-            .unwrap();
-            match invoke("server_login", args).await {
+            match invoke_with("server_login", &payload).await {
                 Ok(result) => {
                     if let Ok(info) = serde_wasm_bindgen::from_value::<MfaChallengeInfo>(result) {
                         set_mfa_challenge_token.set(info.mfa_challenge_token);
@@ -179,16 +96,13 @@ pub fn SettingsSync() -> impl IntoView {
     let handle_mfa_verify = move |_| {
         set_loading.set(true);
         set_error_msg.set(String::new());
-        let token = mfa_challenge_token.get_untracked();
-        let code = totp_code.get_untracked();
+        let payload = MfaVerifyArgs {
+            mfa_challenge_token: mfa_challenge_token.get_untracked(),
+            totp_code: totp_code.get_untracked(),
+        };
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&MfaVerifyArgs {
-                mfa_challenge_token: token,
-                totp_code: code,
-            })
-            .unwrap();
-            match invoke("server_login_verify_mfa", args).await {
+            match invoke_with("server_login_verify_mfa", &payload).await {
                 Ok(_) => {
                     set_connected.set(true);
                     set_mfa_phase.set(MfaPhase::None);
@@ -213,16 +127,13 @@ pub fn SettingsSync() -> impl IntoView {
         set_loading.set(true);
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
-        let e = email.get_untracked();
-        let u = api_url.get_untracked();
+        let payload = SendVerificationArgs {
+            email: email.get_untracked(),
+            api_url: api_url.get_untracked(),
+        };
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&SendVerificationArgs {
-                email: e,
-                api_url: u,
-            })
-            .unwrap();
-            match invoke("server_send_verification", args).await {
+            match invoke_with("server_send_verification", &payload).await {
                 Ok(_) => {
                     set_mfa_phase.set(MfaPhase::EmailVerification);
                     set_totp_code.set(String::new());
@@ -248,23 +159,19 @@ pub fn SettingsSync() -> impl IntoView {
         let p = password.get_untracked();
 
         spawn_local(async move {
-            // Step 1: verify the email code
-            let verify_args = serde_wasm_bindgen::to_value(&VerifyCodeArgs {
+            let verify_payload = VerifyCodeArgs {
                 email: e.clone(),
                 code,
                 api_url: u.clone(),
-            })
-            .unwrap();
-            match invoke("server_verify_code", verify_args).await {
+            };
+            match invoke_with("server_verify_code", &verify_payload).await {
                 Ok(_) => {
-                    // Step 2: proceed with actual registration
-                    let register_args = serde_wasm_bindgen::to_value(&ServerAuthArgs {
+                    let register_payload = ServerAuthArgs {
                         email: e,
                         server_password: p,
                         api_url: u,
-                    })
-                    .unwrap();
-                    match invoke("server_register", register_args).await {
+                    };
+                    match invoke_with("server_register", &register_payload).await {
                         Ok(result) => {
                             if let Ok(info) = serde_wasm_bindgen::from_value::<MfaSetupInfo>(result) {
                                 set_mfa_setup_token.set(info.mfa_setup_token);
@@ -297,14 +204,12 @@ pub fn SettingsSync() -> impl IntoView {
     let handle_delete_account = move |_| {
         set_delete_loading.set(true);
         set_error_msg.set(String::new());
-        let code = delete_totp.get_untracked();
+        let payload = DeleteAccountArgs {
+            totp_code: delete_totp.get_untracked(),
+        };
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&DeleteAccountArgs {
-                totp_code: code,
-            })
-            .unwrap();
-            match invoke("server_delete_account", args).await {
+            match invoke_with("server_delete_account", &payload).await {
                 Ok(_) => {
                     set_connected.set(false);
                     set_show_delete_confirm.set(false);
@@ -326,16 +231,13 @@ pub fn SettingsSync() -> impl IntoView {
     let handle_mfa_confirm = move |_| {
         set_loading.set(true);
         set_error_msg.set(String::new());
-        let token = mfa_setup_token.get_untracked();
-        let code = totp_code.get_untracked();
+        let payload = MfaConfirmArgs {
+            mfa_setup_token: mfa_setup_token.get_untracked(),
+            totp_code: totp_code.get_untracked(),
+        };
 
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&MfaConfirmArgs {
-                mfa_setup_token: token,
-                totp_code: code,
-            })
-            .unwrap();
-            match invoke("server_register_confirm_mfa", args).await {
+            match invoke_with("server_register_confirm_mfa", &payload).await {
                 Ok(_) => {
                     set_connected.set(true);
                     set_mfa_phase.set(MfaPhase::None);
@@ -357,8 +259,7 @@ pub fn SettingsSync() -> impl IntoView {
 
     let handle_logout = move |_| {
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
-            let _ = invoke("server_logout", args).await;
+            let _ = invoke_empty("server_logout").await;
             set_connected.set(false);
             set_success_msg.set(t("sync.disconnected", lang.get()).to_string());
         });
@@ -369,8 +270,7 @@ pub fn SettingsSync() -> impl IntoView {
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
-            match invoke("sync_push", args).await {
+            match invoke_empty("sync_push").await {
                 Ok(result) => {
                     if let Ok(status) = serde_wasm_bindgen::from_value::<SyncStatus>(result) {
                         set_sync_version.set(status.version);
@@ -394,8 +294,7 @@ pub fn SettingsSync() -> impl IntoView {
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&()).unwrap();
-            match invoke("sync_pull", args).await {
+            match invoke_empty("sync_pull").await {
                 Ok(result) => {
                     if let Ok(status) = serde_wasm_bindgen::from_value::<SyncStatus>(result) {
                         set_sync_version.set(status.version);
@@ -432,8 +331,7 @@ pub fn SettingsSync() -> impl IntoView {
                     #[serde(rename = "recoveryPassword")]
                     recovery_password: String,
                 }
-                let args = serde_wasm_bindgen::to_value(&GenArgs { recovery_password: pwd }).unwrap();
-                match invoke("generate_recovery_kit", args).await {
+                match invoke_with("generate_recovery_kit", &GenArgs { recovery_password: pwd }).await {
                     Ok(val) => val.as_string(),
                     Err(_) => None,
                 }
@@ -451,16 +349,20 @@ pub fn SettingsSync() -> impl IntoView {
                 #[serde(rename = "recoveryBlob")]
                 recovery_blob: Option<String>,
             }
-            let args = serde_wasm_bindgen::to_value(&DmArgs {
-                enabled,
-                days,
-                recipient_email: email,
-                recovery_blob: blob,
-            }).unwrap();
-            match invoke("deadman_update_config", args).await {
+            match invoke_with(
+                "deadman_update_config",
+                &DmArgs {
+                    enabled,
+                    days,
+                    recipient_email: email,
+                    recovery_blob: blob,
+                },
+            )
+            .await
+            {
                 Ok(_) => set_success_msg.set(t("general.deadman_saved", lang.get()).to_string()),
                 Err(err) => set_error_msg.set(
-                    err.as_string().unwrap_or_else(|| t("sync.sync_error", lang.get()).to_string())
+                    err.as_string().unwrap_or_else(|| t("sync.sync_error", lang.get()).to_string()),
                 ),
             }
             set_dm_loading.set(false);
@@ -846,40 +748,5 @@ pub fn SettingsSync() -> impl IntoView {
                 }
             }}
         </div>
-    }
-}
-
-#[derive(Deserialize)]
-struct DeadmanStatus {
-    enabled: bool,
-    inactivity_days: u32,
-    last_seen_at: String,
-}
-
-async fn load_deadman_status(
-    set_enabled: WriteSignal<bool>,
-    set_days: WriteSignal<u32>,
-    set_last_seen: WriteSignal<String>,
-) {
-    let args = serde_wasm_bindgen::to_value(&()).unwrap();
-    if let Ok(result) = invoke("deadman_status", args).await {
-        if let Ok(status) = serde_wasm_bindgen::from_value::<DeadmanStatus>(result) {
-            set_enabled.set(status.enabled);
-            set_days.set(status.inactivity_days);
-            set_last_seen.set(status.last_seen_at);
-        }
-    }
-}
-
-async fn load_sync_status(
-    set_version: WriteSignal<i64>,
-    set_updated: WriteSignal<String>,
-) {
-    let args = serde_wasm_bindgen::to_value(&()).unwrap();
-    if let Ok(result) = invoke("sync_status", args).await {
-        if let Ok(status) = serde_wasm_bindgen::from_value::<SyncStatus>(result) {
-            set_version.set(status.version);
-            set_updated.set(status.updated_at);
-        }
     }
 }
