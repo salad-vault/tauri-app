@@ -73,6 +73,21 @@ pub(super) struct DeadmanStatus {
     pub last_seen_at: String,
 }
 
+#[derive(Serialize)]
+pub(super) struct ServerInfoArgs {
+    #[serde(rename = "apiUrl")]
+    pub api_url: String,
+}
+
+/// Capabilities of a (self-hosted) SaladVault server — see `GET /server/info`.
+#[derive(Deserialize)]
+pub(super) struct ServerInfo {
+    #[allow(dead_code)]
+    pub version: String,
+    pub email_verification_required: bool,
+    pub deadman_switch_available: bool,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum MfaPhase {
     None,

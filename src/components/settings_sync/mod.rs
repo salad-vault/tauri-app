@@ -7,10 +7,12 @@ use serde::Serialize;
 
 use crate::i18n::{t, Language};
 
-use self::api::{invoke_empty, invoke_with, load_deadman_status, load_sync_status};
+use self::api::{
+    invoke_empty, invoke_with, load_deadman_status, load_server_info, load_sync_status,
+};
 use self::types::{
     DeleteAccountArgs, MfaChallengeInfo, MfaConfirmArgs, MfaPhase, MfaSetupInfo, MfaVerifyArgs,
-    SendVerificationArgs, ServerAuthArgs, SyncStatus, VerifyCodeArgs,
+    SendVerificationArgs, ServerAuthArgs, ServerInfo, ServerInfoArgs, SyncStatus, VerifyCodeArgs,
 };
 
 #[component]
@@ -19,7 +21,8 @@ pub fn SettingsSync() -> impl IntoView {
     let (connected, set_connected) = signal(false);
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
-    let (api_url, set_api_url) = signal("https://api.saladvault.app".to_string());
+    // No official server: the user enters the URL of their own (self-hosted) one.
+    let (api_url, set_api_url) = signal(String::new());
     let (error_msg, set_error_msg) = signal(String::new());
     let (success_msg, set_success_msg) = signal(String::new());
     let (loading, set_loading) = signal(false);
@@ -40,6 +43,10 @@ pub fn SettingsSync() -> impl IntoView {
     let (dm_last_seen, set_dm_last_seen) = signal(String::new());
     let (dm_loading, set_dm_loading) = signal(false);
 
+    // Connected server: its URL and what it can do (from GET /server/info)
+    let (server_url, set_server_url) = signal(String::new());
+    let (dm_available, set_dm_available) = signal(true);
+
     // MFA state
     let (mfa_phase, set_mfa_phase) = signal(MfaPhase::None);
     let (mfa_setup_token, set_mfa_setup_token) = signal(String::new());
@@ -56,6 +63,7 @@ pub fn SettingsSync() -> impl IntoView {
                 if val {
                     load_sync_status(set_sync_version, set_sync_updated).await;
                     load_deadman_status(set_dm_enabled, set_dm_days, set_dm_last_seen).await;
+                    load_server_info(set_server_url, set_dm_available).await;
                 }
             }
         }
@@ -110,6 +118,7 @@ pub fn SettingsSync() -> impl IntoView {
                     set_password.set(String::new());
                     set_totp_code.set(String::new());
                     load_sync_status(set_sync_version, set_sync_updated).await;
+                    load_server_info(set_server_url, set_dm_available).await;
                 }
                 Err(err) => {
                     set_error_msg.set(
@@ -122,27 +131,72 @@ pub fn SettingsSync() -> impl IntoView {
         });
     };
 
-    // ── Register step 1: send email verification code ──
+    // ── Register step 1: discover the server, then either send the email
+    // verification code (SMTP-enabled server) or register straight away ──
     let handle_register = move |_| {
         set_loading.set(true);
         set_error_msg.set(String::new());
         set_success_msg.set(String::new());
-        let payload = SendVerificationArgs {
-            email: email.get_untracked(),
-            api_url: api_url.get_untracked(),
-        };
+        let e = email.get_untracked();
+        let u = api_url.get_untracked();
+        let p = password.get_untracked();
 
         spawn_local(async move {
-            match invoke_with("server_send_verification", &payload).await {
-                Ok(_) => {
-                    set_mfa_phase.set(MfaPhase::EmailVerification);
-                    set_totp_code.set(String::new());
-                }
+            let info = match invoke_with("server_info", &ServerInfoArgs { api_url: u.clone() }).await {
+                Ok(v) => serde_wasm_bindgen::from_value::<ServerInfo>(v).ok(),
                 Err(err) => {
                     set_error_msg.set(
                         err.as_string()
-                            .unwrap_or_else(|| t("sync.register_error", lang.get()).to_string()),
+                            .unwrap_or_else(|| t("sync.connection_error", lang.get()).to_string()),
                     );
+                    set_loading.set(false);
+                    return;
+                }
+            };
+
+            // Unknown capabilities → assume the strict flow (email verification).
+            let needs_email_verification = info
+                .as_ref()
+                .map(|i| i.email_verification_required)
+                .unwrap_or(true);
+
+            if needs_email_verification {
+                let payload = SendVerificationArgs { email: e, api_url: u };
+                match invoke_with("server_send_verification", &payload).await {
+                    Ok(_) => {
+                        set_mfa_phase.set(MfaPhase::EmailVerification);
+                        set_totp_code.set(String::new());
+                    }
+                    Err(err) => {
+                        set_error_msg.set(
+                            err.as_string()
+                                .unwrap_or_else(|| t("sync.register_error", lang.get()).to_string()),
+                        );
+                    }
+                }
+            } else {
+                // Self-hosted server without SMTP: no email step, straight to MFA setup.
+                let register_payload = ServerAuthArgs {
+                    email: e,
+                    server_password: p,
+                    api_url: u,
+                };
+                match invoke_with("server_register", &register_payload).await {
+                    Ok(result) => {
+                        if let Ok(setup) = serde_wasm_bindgen::from_value::<MfaSetupInfo>(result) {
+                            set_mfa_setup_token.set(setup.mfa_setup_token);
+                            set_mfa_qr_svg.set(setup.qr_svg);
+                            set_mfa_secret_b32.set(setup.totp_secret_base32);
+                            set_mfa_phase.set(MfaPhase::Setup);
+                            set_totp_code.set(String::new());
+                        }
+                    }
+                    Err(err) => {
+                        set_error_msg.set(
+                            err.as_string()
+                                .unwrap_or_else(|| t("sync.register_error", lang.get()).to_string()),
+                        );
+                    }
                 }
             }
             set_loading.set(false);
@@ -245,6 +299,7 @@ pub fn SettingsSync() -> impl IntoView {
                     set_password.set(String::new());
                     set_totp_code.set(String::new());
                     set_show_register.set(false);
+                    load_server_info(set_server_url, set_dm_available).await;
                 }
                 Err(err) => {
                     set_error_msg.set(
@@ -404,6 +459,10 @@ pub fn SettingsSync() -> impl IntoView {
                                 <span class="badge badge-success">{move || t("sync.connected_badge", lang.get())}</span>
                             </div>
                             <div class="settings-row">
+                                <label>{move || t("sync.server_url", lang.get())}</label>
+                                <span class="settings-value-muted">{move || server_url.get()}</span>
+                            </div>
+                            <div class="settings-row">
                                 <label>{move || t("sync.server_version", lang.get())}</label>
                                 <span>{move || sync_version.get().to_string()}</span>
                             </div>
@@ -436,6 +495,17 @@ pub fn SettingsSync() -> impl IntoView {
                         <div class="settings-group">
                             <h3>{move || t("general.deadman_title", lang.get())}</h3>
                             <p class="settings-hint">{move || t("general.deadman_desc", lang.get())}</p>
+                            {move || {
+                                if dm_available.get() {
+                                    view! { <div></div> }.into_any()
+                                } else {
+                                    view! {
+                                        <p class="settings-hint settings-hint-warn">
+                                            {move || t("sync.deadman_unavailable", lang.get())}
+                                        </p>
+                                    }.into_any()
+                                }
+                            }}
                             <div class="settings-row">
                                 <label>{move || t("general.deadman_enable", lang.get())}</label>
                                 <input
@@ -684,11 +754,12 @@ pub fn SettingsSync() -> impl IntoView {
                                 <input
                                     type="url"
                                     class="settings-input"
-                                    placeholder="https://api.saladvault.app"
+                                    placeholder=move || t("sync.server_url_placeholder", lang.get())
                                     prop:value=move || api_url.get()
                                     on:input=move |ev| set_api_url.set(event_target_value(&ev))
                                 />
                             </div>
+                            <p class="settings-hint">{move || t("sync.self_hosted_hint", lang.get())}</p>
                             <div class="settings-row">
                                 <label>{move || t("email", lang.get())}</label>
                                 <input

@@ -116,7 +116,6 @@ rust-app/
 |       +-- settings_data.rs        # Import/Export
 |       +-- settings_privacy.rs     # Vie privee, rapports de crash
 |       +-- settings_general.rs     # Theme, generateur, Dead Man's Switch
-|       +-- settings_subscription.rs # Abonnement (Freemium)
 |       +-- password_utils.rs       # Validation force mot de passe
 |
 +-- src-tauri/                  # Backend Tauri (natif)
@@ -758,7 +757,6 @@ rust-app/
 |       +-- settings_data.rs        # Import/Export
 |       +-- settings_privacy.rs     # Privacy, crash reports
 |       +-- settings_general.rs     # Theme, generator, Dead Man's Switch
-|       +-- settings_subscription.rs # Subscription (Freemium)
 |       +-- password_utils.rs       # Password strength validation
 |
 +-- src-tauri/                  # Tauri backend (native)

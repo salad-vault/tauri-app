@@ -166,9 +166,9 @@ pub fn run() {
             sync::commands::deadman_heartbeat,
             sync::commands::deadman_update_config,
             sync::commands::generate_recovery_kit,
-            sync::commands::subscription_status,
-            sync::commands::subscription_checkout,
-            sync::commands::subscription_portal,
+            // Self-hosted server discovery
+            sync::commands::server_info,
+            sync::commands::server_current_url,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running tauri application");

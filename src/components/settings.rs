@@ -12,7 +12,6 @@ use crate::components::settings_data::SettingsData;
 use crate::components::settings_privacy::SettingsPrivacy;
 use crate::components::settings_general::SettingsGeneral;
 use crate::components::settings_extension::SettingsExtension;
-use crate::components::settings_subscription::SettingsSubscription;
 use crate::components::settings_sync::SettingsSync;
 
 #[wasm_bindgen]
@@ -105,7 +104,6 @@ enum SettingsTab {
     General,
     Sync,
     Extension,
-    Subscription,
 }
 
 #[component]
@@ -239,13 +237,6 @@ pub fn Settings(
                         <span class="nav-icon">"🧩"</span>
                         <span>{move || t("settings.tab_extension", lang.get())}</span>
                     </button>
-                    <button
-                        class=move || if active_tab.get() == SettingsTab::Subscription { "settings-nav-item active" } else { "settings-nav-item" }
-                        on:click=move |_| set_active_tab.set(SettingsTab::Subscription)
-                    >
-                        <span class="nav-icon">"💎"</span>
-                        <span>{move || t("settings.tab_subscription", lang.get())}</span>
-                    </button>
                 </nav>
 
                 <div class="settings-content">
@@ -300,11 +291,6 @@ pub fn Settings(
                             SettingsTab::Extension => {
                                 view! {
                                     <SettingsExtension />
-                                }.into_any()
-                            }
-                            SettingsTab::Subscription => {
-                                view! {
-                                    <SettingsSubscription />
                                 }.into_any()
                             }
                         }

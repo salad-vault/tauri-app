@@ -17,5 +17,4 @@ pub mod settings_keys;
 pub mod settings_privacy;
 pub mod settings_saladiers;
 pub mod settings_security;
-pub mod settings_subscription;
 pub mod settings_sync;
